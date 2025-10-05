@@ -20,7 +20,6 @@ type ringSlot struct {
 type logEntry struct {
 	level   int
 	msg     string
-	fields  map[string]interface{}
 	traceId string
 	spanId  string
 	ts      time.Time
@@ -224,15 +223,10 @@ func (l *Logger) writeOne(e *logEntry) {
 	dfPtr := l.defaultFields.Load()
 	var combined map[string]interface{}
 	if dfPtr != nil && len(*dfPtr) > 0 {
-		combined = make(map[string]interface{}, len(*dfPtr)+len(e.fields))
+		combined = make(map[string]interface{})
 		for k, v := range *dfPtr {
 			combined[k] = v
 		}
-		for k, v := range e.fields {
-			combined[k] = v
-		}
-	} else {
-		combined = e.fields
 	}
 	b := f.Format(e.level, e.msg, combined, e.traceId, e.spanId)
 	p.WriteLine(b)
@@ -240,7 +234,7 @@ func (l *Logger) writeOne(e *logEntry) {
 
 // Log 将一条日志放入队列（若队列满则退化为同步写）
 // traceId/spanId 可为空
-func (l *Logger) Log(level int, msg string, fields map[string]interface{}, traceId, spanId string) {
+func (l *Logger) Log(level int, msg string, traceId, spanId string) {
 	curLevel := int(atomic.LoadInt32(&l.level))
 	if level < curLevel {
 		return
@@ -248,7 +242,6 @@ func (l *Logger) Log(level int, msg string, fields map[string]interface{}, trace
 	e := &logEntry{
 		level:   level,
 		msg:     msg,
-		fields:  fields,
 		traceId: traceId,
 		spanId:  spanId,
 		ts:      time.Now(),
@@ -275,15 +268,10 @@ func (l *Logger) Log(level int, msg string, fields map[string]interface{}, trace
 		dfPtr := l.defaultFields.Load()
 		var combined map[string]interface{}
 		if dfPtr != nil && len(*dfPtr) > 0 {
-			combined = make(map[string]interface{}, len(*dfPtr)+len(e.fields))
+			combined = make(map[string]interface{})
 			for k, v := range *dfPtr {
 				combined[k] = v
 			}
-			for k, v := range e.fields {
-				combined[k] = v
-			}
-		} else {
-			combined = e.fields
 		}
 		b := f.Format(e.level, e.msg, combined, e.traceId, e.spanId)
 		p.WriteLine(b)
@@ -307,7 +295,7 @@ func (l *Logger) Output(callDepth int, level int, format string, args ...interfa
 			msg = caller + " " + msg
 		}
 	}
-	l.Log(level, msg, nil, "", "")
+	l.Log(level, msg, "", "")
 }
 
 // OutputMsg 兼容无格式化参数
@@ -322,7 +310,7 @@ func (l *Logger) OutputMsg(callDepth int, level int, msg string) {
 			msg = caller + " " + msg
 		}
 	}
-	l.Log(level, msg, nil, "", "")
+	l.Log(level, msg, "", "")
 }
 
 func shortFile(path string) string {

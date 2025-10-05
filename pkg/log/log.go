@@ -1,35 +1,10 @@
 package log
 
 import (
-	"backend/go-infra/pkg/log/core"
 	"context"
+	"fmt"
+	"go-infra/pkg/log/core"
 )
-
-var logger *core.Logger
-
-// Init 初始化日志
-func Init(cfg Config) {
-	var formatter core.Formatter
-	if cfg.Formatter == "json" {
-		formatter = &core.JSONFormatter{}
-	} else {
-		formatter = &core.TxtLineFormatter{}
-	}
-
-	provider := core.NewStdProvider()
-	buffer := cfg.BufferSize
-	if buffer <= 0 {
-		buffer = 1000
-	}
-	logger = core.NewLogger(cfg.Level, provider, formatter, buffer)
-}
-
-// Close 关闭日志（确保异步队列写完）
-func Close() {
-	if logger != nil {
-		logger.Close()
-	}
-}
 
 // =================== Context 支持 ===================
 
@@ -74,6 +49,25 @@ func New() *ContextLogger {
 	}
 }
 
+// WithFields 返回一个新的 ContextLogger，带上额外的默认字段
+func (cl *ContextLogger) WithFields(fields map[string]interface{}) *ContextLogger {
+	if cl.l == nil {
+		return cl
+	}
+
+	// 合并 traceId/spanId
+	newFields := make(map[string]interface{})
+	for k, v := range fields {
+		newFields[k] = v
+	}
+
+	return &ContextLogger{
+		l:       cl.l.WithFields(newFields), // 调用核心 Logger 的 WithFields
+		traceId: cl.traceId,
+		spanId:  cl.spanId,
+	}
+}
+
 // ContextLogger 支持链路日志
 type ContextLogger struct {
 	l       *core.Logger
@@ -81,33 +75,32 @@ type ContextLogger struct {
 	spanId  string
 }
 
-func (cl *ContextLogger) Debug(msg string, fields ...map[string]interface{}) {
-	cl.log(core.LevelDebug, msg, fields...)
+func (cl *ContextLogger) Debug(msg string, args ...interface{}) {
+	cl.log(core.LevelDebug, msg, args...)
 }
-func (cl *ContextLogger) Info(msg string, fields ...map[string]interface{}) {
-	cl.log(core.LevelInfo, msg, fields...)
+func (cl *ContextLogger) Info(msg string, args ...interface{}) {
+	cl.log(core.LevelInfo, msg, args...)
 }
-func (cl *ContextLogger) Warn(msg string, fields ...map[string]interface{}) {
-	cl.log(core.LevelWarn, msg, fields...)
+func (cl *ContextLogger) Warn(msg string, args ...interface{}) {
+	cl.log(core.LevelWarn, msg, args...)
 }
-func (cl *ContextLogger) Error(msg string, fields ...map[string]interface{}) {
-	cl.log(core.LevelError, msg, fields...)
+func (cl *ContextLogger) Error(msg string, args ...interface{}) {
+	cl.log(core.LevelError, msg, args...)
 }
-func (cl *ContextLogger) Fatal(msg string, fields ...map[string]interface{}) {
-	cl.log(core.LevelFatal, msg, fields...)
+func (cl *ContextLogger) Fatal(msg string, args ...interface{}) {
+	cl.log(core.LevelFatal, msg, args...)
 }
 
-func (cl *ContextLogger) log(level int, msg string, fields ...map[string]interface{}) {
+func (cl *ContextLogger) log(level int, format string, args ...interface{}) {
 	if cl.l == nil {
 		return
 	}
-	combined := make(map[string]interface{})
-	for _, m := range fields {
-		if m != nil {
-			for k, v := range m {
-				combined[k] = v
-			}
-		}
+
+	// 拼接消息
+	msg := format
+	if len(args) > 0 {
+		msg = fmt.Sprintf(format, args...)
 	}
-	cl.l.Log(level, msg, combined, cl.traceId, cl.spanId)
+
+	cl.l.Log(level, msg, cl.traceId, cl.spanId)
 }
