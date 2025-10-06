@@ -1,4 +1,4 @@
-module go-infra
+module github.com/liukunxin/go-infra
 
 go 1.23.8
 
