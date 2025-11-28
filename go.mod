@@ -4,9 +4,13 @@ go 1.23.8
 
 require (
 	github.com/apolloconfig/agollo/v4 v4.4.0
+	github.com/bwmarrin/snowflake v0.3.0
 	github.com/go-redis/redis/v8 v8.11.5
+	github.com/gofrs/uuid v4.4.0+incompatible
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/ks3sdklib/aws-sdk-go v1.8.1
 	github.com/milvus-io/milvus-sdk-go/v2 v2.4.2
+	github.com/sony/sonyflake v1.3.0
 	go.opentelemetry.io/contrib/propagators/b3 v1.38.0
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/sdk v1.38.0
