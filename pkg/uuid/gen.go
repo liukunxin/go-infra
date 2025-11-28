@@ -1,7 +1,7 @@
 package uuid
 
 import (
-	"github.com/liukunxin/go-infra/pkg/utils"
+	"github.com/liukunxin/go-infra/internal/utils"
 	"sync"
 
 	"github.com/bwmarrin/snowflake"
