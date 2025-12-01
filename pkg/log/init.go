@@ -1,6 +1,6 @@
 package log
 
-import "go-infra/pkg/log/core"
+import "github.com/liukunxin/go-infra/pkg/log/core"
 
 var logger *core.Logger
 

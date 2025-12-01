@@ -1,7 +1,6 @@
 package errors
 
 import (
-	"backend/go-infra/pkg/log"
 	"errors"
 	"fmt"
 	"net/http"
@@ -67,7 +66,8 @@ func UnWarpErrorResponse(err error) *ErrorResponse {
 		err = fmt.Errorf("unknown error")
 	}
 	er := &ErrorResponse{Status: StatusInternalServerError, Code: int(CodeInternalCallFailed), Message: err.Error()}
-	if e, ok := err.(*Error); ok {
+	var e *Error
+	if errors.As(err, &e) {
 		er = &ErrorResponse{
 			Status:  e.Status,
 			Code:    int(e.Code),
@@ -102,19 +102,6 @@ func New(status Status, code Code, err error) *Error {
 	}
 }
 
-func (x *Error) Fields() log.Fields {
-	f1 := log.Fields{
-		"err_code":   x.Code,
-		"err_status": x.Status,
-		"err_msg":    x.Error(),
-	}
-	// 优先返回错误信息，没有才返回code的信息
-	if len(x.Error()) != 0 {
-		f1["err_msg"] = x.Error()
-	}
-	return f1
-}
-
 // FromError try to convert an error to *Error.
 // It supports wrapped errors.
 func FromError(err error) *Error {
@@ -125,12 +112,4 @@ func FromError(err error) *Error {
 		return se
 	}
 	return New(StatusInternalServerError, CodeInternalCallFailed, err)
-}
-
-func LogErrorRetrieve(err error) log.Fields {
-	chatErr := FromError(err)
-	if chatErr != nil {
-		return chatErr.Fields()
-	}
-	return log.Fields{}
 }

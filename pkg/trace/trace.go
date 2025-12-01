@@ -3,7 +3,7 @@ package trace
 import (
 	"context"
 	"fmt"
-	"go-infra/pkg/env"
+	"github.com/liukunxin/go-infra/pkg/env"
 	"sync/atomic"
 
 	"go.opentelemetry.io/contrib/propagators/b3"

@@ -3,7 +3,7 @@ package log
 import (
 	"context"
 	"fmt"
-	"go-infra/pkg/log/core"
+	"github.com/liukunxin/go-infra/pkg/log/core"
 )
 
 // =================== Context 支持 ===================
