@@ -7,8 +7,10 @@ import (
 )
 
 type Claims struct {
-	UserID string `json:"user_id"`
-	OpenID string `json:"open_id"`
+	UserID    string `json:"user_id"`
+	OpenID    string `json:"open_id"`
+	LoginTime int64  `json:"login_time"`
+	SessionID string `json:"session_id"`
 	jwt.RegisteredClaims
 }
 
@@ -22,10 +24,12 @@ func NewClient(jwtSecret []byte) *Client {
 	}
 }
 
-func (c *Client) GenerateToken(uid string, openID string, expireTime time.Duration) (string, error) {
+func (c *Client) GenerateToken(uid string, openID string, sessionID string, expireTime time.Duration) (string, error) {
 	claims := Claims{
-		UserID: uid,
-		OpenID: openID,
+		UserID:    uid,
+		OpenID:    openID,
+		SessionID: sessionID,
+		LoginTime: time.Now().Unix(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expireTime)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
