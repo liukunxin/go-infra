@@ -19,14 +19,14 @@ var (
 	globalTracerProvider atomic.Pointer[trace.TracerProvider]
 )
 
-func Must(ctx context.Context, opts ...Option) {
-	err := Init(ctx, opts...)
+func Must(opts ...Option) {
+	err := Init(opts...)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func Init(ctx context.Context, opts ...Option) error {
+func Init(opts ...Option) error {
 	c := &optionConfig{}
 
 	for _, opt := range opts {
