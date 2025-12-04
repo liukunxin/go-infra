@@ -21,18 +21,24 @@ var (
 )
 
 func Init(opts ...Option) {
-	err := Register(opts...)
+	tp, err := newTracerProvider(opts...)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(
+		propagation.NewCompositeTextMapPropagator(b3.New()),
+	)
+
+	globalTracerProvider.Store(tp)
 }
 
-func Register(opts ...Option) error {
+func newTracerProvider(opts ...Option) (*trace.TracerProvider, error) {
 	c := &optionConfig{}
 
 	for _, opt := range opts {
 		if err := opt.apply(c); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -44,7 +50,7 @@ func Register(opts ...Option) error {
 		serviceName = env.GetName()
 	}
 	if serviceName == "" {
-		return fmt.Errorf("service name is required")
+		return nil, fmt.Errorf("service name is required")
 	}
 
 	tpOpts := make([]trace.TracerProviderOption, 0, 8)
@@ -68,15 +74,7 @@ func Register(opts ...Option) error {
 	)
 
 	tracerProvider := trace.NewTracerProvider(tpOpts...)
-
-	otel.SetTracerProvider(tracerProvider)
-	otel.SetTextMapPropagator(
-		propagation.NewCompositeTextMapPropagator(b3.New()),
-	)
-
-	globalTracerProvider.Store(tracerProvider)
-
-	return nil
+	return tracerProvider, nil
 }
 
 func Flush() {
