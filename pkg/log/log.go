@@ -16,12 +16,18 @@ func WithContext(ctx context.Context) *ContextLogger {
 	}
 	span := trace.SpanFromContext(ctx)
 	spanCtx := span.SpanContext()
-	traceId := spanCtx.TraceID().String()
-	spanId := spanCtx.SpanID().String()
+	var traceID string
+	var spanID string
+	if spanCtx.HasTraceID() {
+		traceID = spanCtx.TraceID().String()
+	}
+	if spanCtx.HasSpanID() {
+		spanID = spanCtx.SpanID().String()
+	}
 	return &ContextLogger{
 		l:       logger,
-		traceId: traceId,
-		spanId:  spanId,
+		traceId: traceID,
+		spanId:  spanID,
 	}
 }
 
