@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/liukunxin/go-infra/pkg/env"
+	"log"
 	"sync/atomic"
 
 	"go.opentelemetry.io/contrib/propagators/b3"
@@ -19,14 +20,14 @@ var (
 	globalTracerProvider atomic.Pointer[trace.TracerProvider]
 )
 
-func Must(opts ...Option) {
-	err := Init(opts...)
+func Init(opts ...Option) {
+	err := Register(opts...)
 	if err != nil {
-		panic(err)
+		log.Fatal(err.Error())
 	}
 }
 
-func Init(opts ...Option) error {
+func Register(opts ...Option) error {
 	c := &optionConfig{}
 
 	for _, opt := range opts {
