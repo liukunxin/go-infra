@@ -79,11 +79,12 @@ func Register(opts ...Option) error {
 	return nil
 }
 
-func Flush() error {
+func Flush() {
 	tracerProvider := globalTracerProvider.Load()
-	if tracerProvider != nil {
-		return tracerProvider.ForceFlush(context.Background())
+	if tracerProvider == nil {
+		return
 	}
-
-	return nil
+	if err := tracerProvider.ForceFlush(context.Background()); err != nil {
+		log.Fatal(err.Error())
+	}
 }
