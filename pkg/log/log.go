@@ -4,35 +4,20 @@ import (
 	"context"
 	"fmt"
 	"github.com/liukunxin/go-infra/pkg/log/core"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // =================== Context 支持 ===================
 
-// contextKey 用于存储 traceId/spanId
-type contextKey string
-
-const (
-	traceIDKey = contextKey("traceId")
-	spanIDKey  = contextKey("spanId")
-)
-
-// InjectTrace 把 traceId/spanId 写入 context
-func InjectTrace(ctx context.Context, traceId, spanId string) context.Context {
-	ctx = context.WithValue(ctx, traceIDKey, traceId)
-	ctx = context.WithValue(ctx, spanIDKey, spanId)
-	return ctx
-}
-
 // WithContext 返回一个绑定 ctx 的 Logger
 func WithContext(ctx context.Context) *ContextLogger {
-	if logger == nil {
-		return nil
-	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	traceId, _ := ctx.Value(traceIDKey).(string)
-	spanId, _ := ctx.Value(spanIDKey).(string)
+	span := trace.SpanFromContext(ctx)
+	spanCtx := span.SpanContext()
+	traceId := spanCtx.TraceID().String()
+	spanId := spanCtx.SpanID().String()
 	return &ContextLogger{
 		l:       logger,
 		traceId: traceId,
