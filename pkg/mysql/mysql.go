@@ -15,36 +15,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
-
-var (
-	globalClient *Client
-	once         sync.Once
-)
-
-// Init 启动时Mysql全局初始化
-func Init(cfg Config) {
-	once.Do(func() {
-		c, err := NewClient(cfg)
-		if err != nil {
-			log.Fatal(err)
-		}
-		globalClient = c
-	})
-}
-
-func GetClient() *Client {
-	if globalClient == nil {
-		log.Fatal("mysql client not initialized")
-	}
-	return globalClient
-}
 
 // Client SDK 客户端
 type Client struct {
