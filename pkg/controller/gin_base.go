@@ -15,8 +15,8 @@ type GinBase struct {
 type CommonResponse struct {
 	Code    int32       `json:"code"`
 	Msg     string      `json:"msg"`
-	TraceID string      `json:"trace_id"`
 	Data    interface{} `json:"data,omitempty"`
+	TraceID string      `json:"trace_id"`
 }
 
 func (*GinBase) SuccessResponse(ctx *gin.Context, data interface{}) {
