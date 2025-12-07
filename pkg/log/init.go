@@ -12,13 +12,8 @@ func Init(cfg Config) {
 	} else {
 		formatter = &core.TxtLineFormatter{}
 	}
-
 	provider := core.NewStdProvider()
-	buffer := cfg.BufferSize
-	if buffer <= 0 {
-		buffer = 1000
-	}
-	logger = core.NewLogger(cfg.Level, provider, formatter, buffer)
+	logger = core.NewLogger(cfg.Level, provider, formatter, cfg.BufferSize)
 }
 
 // Close 关闭日志（确保异步队列写完）
