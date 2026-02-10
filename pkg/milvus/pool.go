@@ -5,13 +5,11 @@ import (
 	"context"
 	"errors"
 	"github.com/milvus-io/milvus-sdk-go/v2/client"
-	"sync"
 	"time"
 )
 
 // Pool 定义连接池结构
 type Pool struct {
-	mu         sync.Mutex
 	clients    chan client.Client            // 存储连接的通道
 	maxSize    int                           // 最大连接数
 	createFunc func() (client.Client, error) // 创建新连接的方法
@@ -43,7 +41,7 @@ func NewPool(maxSize int, createFunc func() (client.Client, error)) (*Pool, erro
 
 // Get 获取一个连接
 func (p *Pool) Get() (client.Client, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	select {
 	case milvusClient := <-p.clients:
@@ -57,23 +55,12 @@ func (p *Pool) Get() (client.Client, error) {
 
 // Put 归还连接到池中
 func (p *Pool) Put(milvusClient client.Client) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// 如果池已满，关闭连接
-	if len(p.clients) >= p.maxSize {
-		err := milvusClient.Close()
-		if err != nil {
-			log.New().Error("[milvus_err]||err=%s" + err.Error())
-		}
-		return
-	}
-
-	// 放回池中
+	// 放回池中，如果池已满则关闭连接
 	select {
 	case p.clients <- milvusClient:
+		// 成功放回池中
 	default:
-		// 如果通道已满，关闭连接
+		// 池已满，关闭连接
 		err := milvusClient.Close()
 		if err != nil {
 			log.New().Error("[milvus_err]||err=%s" + err.Error())
@@ -83,9 +70,6 @@ func (p *Pool) Put(milvusClient client.Client) {
 
 // Close 关闭连接池
 func (p *Pool) Close() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	close(p.clients)
 	for milvusClient := range p.clients {
 		err := milvusClient.Close()

@@ -32,9 +32,7 @@ func HttpLogRecord() gin.HandlerFunc {
 			respCode = -1
 		}
 		respMsg := c.GetString(consts.ResponseMsg)
-		if statusCode == http.StatusOK {
-			return
-		}
+		
 		// 封装主要信息
 		logMessage := fmt.Sprintf("[%s_%s]%s | %d | %d | %v | %s",
 			method,
@@ -59,8 +57,8 @@ func HttpLogRecord() gin.HandlerFunc {
 			})
 		if statusCode != http.StatusOK {
 			lg.Error(logMessage)
-			return
+		} else {
+			lg.Info(logMessage)
 		}
-		lg.Info(logMessage)
 	}
 }

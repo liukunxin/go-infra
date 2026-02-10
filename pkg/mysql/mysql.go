@@ -34,12 +34,25 @@ func NewClient(cfg Config) (*Client, error) {
 	if cfg.DSN == "" {
 		return nil, errors.New("DSN 不能为空")
 	}
-	// 默认值
+	// 设置合理的默认值
 	if cfg.ConnRetryTimes <= 0 {
 		cfg.ConnRetryTimes = 3
 	}
 	if cfg.ConnRetryInterval <= 0 {
 		cfg.ConnRetryInterval = 2 * time.Second
+	}
+	// 设置连接池默认值（参考业界最佳实践）
+	if cfg.MaxOpenConns <= 0 {
+		cfg.MaxOpenConns = 100 // 默认最大100个连接，避免数据库连接数过多
+	}
+	if cfg.MaxIdleConns <= 0 {
+		cfg.MaxIdleConns = 10 // 默认保持10个空闲连接，平衡性能和资源
+	}
+	if cfg.ConnMaxLifetime <= 0 {
+		cfg.ConnMaxLifetime = 1 * time.Hour // 默认1小时，避免长时间连接导致的问题
+	}
+	if cfg.ConnMaxIdleTime <= 0 {
+		cfg.ConnMaxIdleTime = 10 * time.Minute // 默认10分钟，及时释放不活跃连接
 	}
 
 	gormCfg := &gorm.Config{
@@ -71,19 +84,11 @@ func NewClient(cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("failed to get sql.DB from gorm: %w", err)
 	}
 
-	// 连接池配置
-	if cfg.MaxOpenConns > 0 {
-		sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
-	}
-	if cfg.MaxIdleConns > 0 {
-		sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
-	}
-	if cfg.ConnMaxLifetime > 0 {
-		sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
-	}
-	if cfg.ConnMaxIdleTime > 0 {
-		sqlDB.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
-	}
+	// 连接池配置（已在上面设置了默认值，这里直接应用）
+	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
 
 	client := &Client{
 		cfg:   cfg,

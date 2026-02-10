@@ -5,7 +5,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"sync"
 	"time"
 )
 
@@ -14,21 +13,29 @@ type Config struct {
 	Timeout             time.Duration `yaml:"timeout" json:"timeout"`                                 // 请求超时
 	MaxIdleConns        int           `json:"max_idle_conns" yaml:"max_idle_conns"`                   // 最大空闲连接数
 	MaxIdleConnsPerHost int           `yaml:"max_idle_conns_per_host" json:"max_idle_conns_per_host"` // 每个 host 最大空闲连接数
+	MaxConnsPerHost     int           `yaml:"max_conns_per_host" json:"max_conns_per_host"`           // 每个 host 最大连接数
 	IdleConnTimeout     time.Duration `yaml:"idle_conn_timeout" json:"idle_conn_timeout"`             // 空闲连接超时时间
+	TLSHandshakeTimeout time.Duration `yaml:"tls_handshake_timeout" json:"tls_handshake_timeout"`     // TLS握手超时时间
 }
 
 // Client 封装的 HTTP 客户端
 type Client struct {
 	httpClient *http.Client
-	mu         sync.Mutex
 }
 
 // NewClient 创建一个带连接池的 HTTP 客户端
 func NewClient(cfg Config) *Client {
+	// 设置默认值
+	if cfg.TLSHandshakeTimeout == 0 {
+		cfg.TLSHandshakeTimeout = 10 * time.Second
+	}
+	
 	transport := &http.Transport{
 		MaxIdleConns:        cfg.MaxIdleConns,
 		MaxIdleConnsPerHost: cfg.MaxIdleConnsPerHost,
+		MaxConnsPerHost:     cfg.MaxConnsPerHost,
 		IdleConnTimeout:     cfg.IdleConnTimeout,
+		TLSHandshakeTimeout: cfg.TLSHandshakeTimeout,
 		DialContext: (&net.Dialer{
 			Timeout:   5 * time.Second,
 			KeepAlive: 30 * time.Second,

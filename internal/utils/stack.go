@@ -49,4 +49,5 @@ func (s *Stack[T]) Push(value T) {
 
 func (s *Stack[T]) Clear() {
 	s.top = nil
+	s.length = 0
 }
