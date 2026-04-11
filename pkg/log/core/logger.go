@@ -4,10 +4,19 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
 )
+
+// mapPool 用于复用 map[string]interface{} 对象，减少内存分配
+var mapPool = sync.Pool{
+	New: func() interface{} {
+		// 预分配一定容量，减少扩容
+		return make(map[string]interface{}, 8)
+	},
+}
 
 // ringSlot 插槽
 type ringSlot struct {
@@ -20,8 +29,8 @@ type ringSlot struct {
 type logEntry struct {
 	level   int
 	msg     string
-	traceId string
-	spanId  string
+	traceId string // TraceID: 整个请求链路的唯一标识，用于关联日志
+	spanId  string // SpanID: 可选，用于详细的分布式追踪（如Jaeger）
 	ts      time.Time
 }
 
@@ -113,14 +122,19 @@ func (l *Logger) SetProvider(p Provider) {
 	l.provider.Store(&p)
 }
 
-// WithFields 返回一个“子 logger”——实际上是共享同一 Logger，但将 defaultFields 原子替换为合并后的 map。
+// WithFields 返回一个"子 logger"——实际上是共享同一 Logger，但将 defaultFields 原子替换为合并后的 map。
 // 该操作使用原子交换指针方式，避免锁。返回的 *Logger 仍然是同一对象（fields pointer changed globally）。
 // 注意：为了简单性，这里返回同一指针（不会复制底层队列）；如果你需要独立 defaultFields，请 copy 一个新的 Logger（可按需扩展）。
+// 注意：此 map 会被长期持有，不能使用对象池（会导致内存泄漏）
 func (l *Logger) WithFields(fields map[string]interface{}) *Logger {
 	// 读取当前 map
 	ptr := l.defaultFields.Load()
 	cur := *ptr
+	
+	// 创建新的 map（不使用对象池，因为这个map需要长期保留）
 	merged := make(map[string]interface{}, len(cur)+len(fields))
+	
+	// 合并字段
 	for k, v := range cur {
 		merged[k] = v
 	}
@@ -219,17 +233,26 @@ func (l *Logger) writeOne(e *logEntry) {
 		fmt.Print(line)
 		return
 	}
-	// combine default fields + entry fields
+	// combine default fields + entry fields (使用对象池优化)
 	dfPtr := l.defaultFields.Load()
 	var combined map[string]interface{}
 	if dfPtr != nil && len(*dfPtr) > 0 {
-		combined = make(map[string]interface{})
+		combined = mapPool.Get().(map[string]interface{})
+		// 清空 map
+		for k := range combined {
+			delete(combined, k)
+		}
 		for k, v := range *dfPtr {
 			combined[k] = v
 		}
 	}
 	b := f.Format(e.level, e.msg, combined, e.traceId, e.spanId)
 	p.WriteLine(b)
+	
+	// 归还 map 到对象池
+	if combined != nil {
+		mapPool.Put(combined)
+	}
 }
 
 // Log 将一条日志放入队列（若队列满则退化为同步写）
@@ -264,17 +287,26 @@ func (l *Logger) Log(level int, msg string, traceId, spanId string) {
 			fmt.Printf("%s %s %s\n", e.ts.Format(time.RFC3339Nano), LevelToString(e.level), e.msg)
 			return
 		}
-		// merge default fields
+		// merge default fields (使用对象池优化)
 		dfPtr := l.defaultFields.Load()
 		var combined map[string]interface{}
 		if dfPtr != nil && len(*dfPtr) > 0 {
-			combined = make(map[string]interface{})
+			combined = mapPool.Get().(map[string]interface{})
+			// 清空 map
+			for k := range combined {
+				delete(combined, k)
+			}
 			for k, v := range *dfPtr {
 				combined[k] = v
 			}
 		}
 		b := f.Format(e.level, e.msg, combined, e.traceId, e.spanId)
 		p.WriteLine(b)
+		
+		// 归还 map 到对象池
+		if combined != nil {
+			mapPool.Put(combined)
+		}
 	}
 }
 

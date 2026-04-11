@@ -55,9 +55,15 @@ func newTracerProvider(opts ...Option) (*trace.TracerProvider, error) {
 
 	tpOpts := make([]trace.TracerProviderOption, 0, 8)
 
+	// 配置采样器（默认使用ParentBased，确保trace链路完整）
 	if c.sampleRatio != nil {
 		tpOpts = append(tpOpts, trace.WithSampler(
 			trace.ParentBased(trace.TraceIDRatioBased(*c.sampleRatio)),
+		))
+	} else {
+		// 默认使用 ParentBased(AlwaysSample)，确保每个请求都有trace
+		tpOpts = append(tpOpts, trace.WithSampler(
+			trace.ParentBased(trace.AlwaysSample()),
 		))
 	}
 
