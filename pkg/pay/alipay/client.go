@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/rsa"
 	"encoding/json"
-	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -36,7 +36,7 @@ func NewClient(cfg Config) (*Client, error) {
 	}
 	hc := cfg.HTTPClient
 	if hc == nil {
-		hc = &http.Client{Timeout: cfg.HTTPTimeout}
+		hc = newDefaultHTTPClient(cfg.HTTPTimeout)
 	}
 	return &Client{
 		cfg:        cfg,
@@ -98,16 +98,34 @@ func (c *Client) postGateway(ctx context.Context, apiMethod string, biz map[stri
 		return nil, err
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
+	// 限制最大读取 4 MB，防止异常超大响应撑爆内存。
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		return nil, err
 	}
-	if err := verifyJSONResponse(c.aliPub, raw); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrVerifySign, err)
-	}
-	var root map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &root); err != nil {
+	// verifyAndParseJSONResponse 验签并返回已解析的 root map，避免二次 json.Unmarshal。
+	root, err := verifyAndParseJSONResponse(c.aliPub, raw)
+	if err != nil {
 		return nil, err
 	}
 	return root, nil
+}
+
+// newDefaultHTTPClient 创建专用于支付宝网关的独立 HTTP 客户端。
+// 使用私有 Transport，不受 http.DefaultTransport 全局配置影响。
+func newDefaultHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   5 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			MaxIdleConns:          10,
+			MaxIdleConnsPerHost:   4,
+			IdleConnTimeout:       90 * time.Second,
+		},
+	}
 }

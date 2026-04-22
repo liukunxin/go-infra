@@ -6,3 +6,11 @@
 //
 // 聚合入口可使用 Hub 一次注入两侧客户端。
 package pay
+
+// Provider 标识支付渠道，可用于业务层路由或埋点。
+type Provider string
+
+const (
+	ProviderWechat Provider = "wechat"
+	ProviderAlipay Provider = "alipay"
+)

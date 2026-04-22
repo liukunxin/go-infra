@@ -26,6 +26,9 @@ type TransactionQueryResult struct {
 
 // QueryOrderByOutTradeNo GET /v3/pay/transactions/out-trade-no/{out_trade_no}。
 func (c *Client) QueryOrderByOutTradeNo(ctx context.Context, outTradeNo string) (*TransactionQueryResult, error) {
+	if outTradeNo == "" {
+		return nil, fmt.Errorf("%w: outTradeNo required", ErrInvalidConfig)
+	}
 	path := fmt.Sprintf("/v3/pay/transactions/out-trade-no/%s?mchid=%s",
 		url.PathEscape(outTradeNo), url.QueryEscape(c.cfg.MchID))
 	respBody, code, err := c.do(ctx, http.MethodGet, path, nil)
@@ -44,6 +47,9 @@ func (c *Client) QueryOrderByOutTradeNo(ctx context.Context, outTradeNo string) 
 
 // CloseOrder POST /v3/pay/transactions/out-trade-no/{out_trade_no}/close。
 func (c *Client) CloseOrder(ctx context.Context, outTradeNo string) error {
+	if outTradeNo == "" {
+		return fmt.Errorf("%w: outTradeNo required", ErrInvalidConfig)
+	}
 	path := fmt.Sprintf("/v3/pay/transactions/out-trade-no/%s/close", url.PathEscape(outTradeNo))
 	body, err := json.Marshal(map[string]string{"mchid": c.cfg.MchID})
 	if err != nil {

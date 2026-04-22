@@ -8,7 +8,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -42,7 +44,7 @@ func NewClient(cfg Config) (*Client, error) {
 	}
 	hc := cfg.HTTPClient
 	if hc == nil {
-		hc = &http.Client{Timeout: cfg.HTTPTimeout}
+		hc = newDefaultHTTPClient(cfg.HTTPTimeout)
 	}
 	return &Client{
 		cfg:        cfg,
@@ -54,7 +56,7 @@ func NewClient(cfg Config) (*Client, error) {
 
 func (c *Client) authorization(method, urlPath string, body []byte) (string, error) {
 	nonce := randomNonce()
-	ts := fmt.Sprintf("%d", time.Now().Unix())
+	ts := strconv.FormatInt(time.Now().Unix(), 10)
 	bodyStr := string(body)
 	msg := method + "\n" + urlPath + "\n" + ts + "\n" + nonce + "\n" + bodyStr + "\n"
 	sig, err := signSHA256WithRSA(c.priv, msg)
@@ -96,7 +98,8 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]by
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(resp.Body)
+	// 限制最大读取 4 MB，防止异常超大响应撑爆内存。
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		return nil, resp.StatusCode, err
 	}
@@ -107,4 +110,23 @@ func randomNonce() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// newDefaultHTTPClient 创建专用于微信支付的独立 HTTP 客户端。
+// 使用私有 Transport，不受 http.DefaultTransport 全局配置影响。
+func newDefaultHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   5 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			MaxIdleConns:          10,
+			MaxIdleConnsPerHost:   4,
+			IdleConnTimeout:       90 * time.Second,
+		},
+	}
 }

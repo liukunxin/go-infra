@@ -75,7 +75,7 @@ func (c *Client) DecryptNotifyBody(body []byte) (*TransactionNotifyPayload, erro
 		return nil, err
 	}
 	if env.Resource.Algorithm != "AEAD_AES_256_GCM" {
-		return nil, fmt.Errorf("unsupported resource algorithm: %s", env.Resource.Algorithm)
+		return nil, fmt.Errorf("%w: got %q, expect AEAD_AES_256_GCM", ErrUnsupportedAlgorithm, env.Resource.Algorithm)
 	}
 	plain, err := decryptAES256GCM(c.cfg.APIv3Key, env.Resource.AssociatedData, env.Resource.Nonce, env.Resource.Ciphertext)
 	if err != nil {
@@ -114,6 +114,10 @@ func decryptAES256GCM(apiV3Key, associatedData, nonce, ciphertextB64 string) ([]
 		return nil, err
 	}
 	nonceBytes := []byte(nonce)
+	// AES-GCM nonce 须为 12 字节；微信平台 nonce 为 12 位 ASCII 字符，字节长度相同。
+	if len(nonceBytes) != gcm.NonceSize() {
+		return nil, fmt.Errorf("decrypt: nonce length %d, expect %d", len(nonceBytes), gcm.NonceSize())
+	}
 	plain, err := gcm.Open(nil, nonceBytes, cipherBytes, []byte(associatedData))
 	if err != nil {
 		return nil, fmt.Errorf("gcm open: %w", err)

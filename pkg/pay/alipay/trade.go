@@ -18,6 +18,9 @@ type AppPayRequest struct {
 
 // TradeAppPay 生成 APP 调起支付串（alipay.trade.app.pay 参数 + RSA2 签名）。
 func (c *Client) TradeAppPay(in AppPayRequest) (orderStr string, err error) {
+	if in.OutTradeNo == "" || in.Subject == "" || in.TotalAmount == "" {
+		return "", fmt.Errorf("%w: OutTradeNo/Subject/TotalAmount required", ErrInvalidConfig)
+	}
 	biz := map[string]any{
 		"subject":      in.Subject,
 		"out_trade_no": in.OutTradeNo,
@@ -54,6 +57,9 @@ type PrecreateResponse struct {
 
 // TradePrecreate 调用 alipay.trade.precreate。
 func (c *Client) TradePrecreate(ctx context.Context, in PrecreateRequest) (*PrecreateResponse, error) {
+	if in.OutTradeNo == "" || in.Subject == "" || in.TotalAmount == "" {
+		return nil, fmt.Errorf("%w: OutTradeNo/Subject/TotalAmount required", ErrInvalidConfig)
+	}
 	biz := map[string]any{
 		"subject":      in.Subject,
 		"out_trade_no": in.OutTradeNo,
@@ -107,6 +113,9 @@ type TradeQueryResponse struct {
 
 // TradeQuery 调用 alipay.trade.query。
 func (c *Client) TradeQuery(ctx context.Context, in TradeQueryRequest) (*TradeQueryResponse, error) {
+	if in.OutTradeNo == "" {
+		return nil, fmt.Errorf("%w: OutTradeNo required", ErrInvalidConfig)
+	}
 	biz := map[string]any{
 		"out_trade_no": in.OutTradeNo,
 	}
@@ -154,6 +163,9 @@ type RefundResponse struct {
 
 // TradeRefund 调用 alipay.trade.refund。
 func (c *Client) TradeRefund(ctx context.Context, in RefundRequest) (*RefundResponse, error) {
+	if in.OutTradeNo == "" || in.RefundAmount == "" || in.OutRequestNo == "" {
+		return nil, fmt.Errorf("%w: OutTradeNo/RefundAmount/OutRequestNo required", ErrInvalidConfig)
+	}
 	biz := map[string]any{
 		"out_trade_no":   in.OutTradeNo,
 		"refund_amount":  in.RefundAmount,

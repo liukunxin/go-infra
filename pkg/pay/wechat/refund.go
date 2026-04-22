@@ -3,6 +3,7 @@ package wechat
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -26,6 +27,9 @@ type RefundResult struct {
 
 // Refund 调用 /v3/refund/domestic/refunds。
 func (c *Client) Refund(ctx context.Context, in RefundRequest) (*RefundResult, error) {
+	if in.OutTradeNo == "" || in.OutRefundNo == "" || in.RefundFen <= 0 || in.TotalFen <= 0 {
+		return nil, fmt.Errorf("%w: OutTradeNo/OutRefundNo required, RefundFen/TotalFen must be > 0", ErrInvalidConfig)
+	}
 	path := "/v3/refund/domestic/refunds"
 	body := map[string]any{
 		"out_trade_no":  in.OutTradeNo,
