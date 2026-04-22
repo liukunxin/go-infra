@@ -29,6 +29,7 @@
 | **HTTP Client** | HTTP客户端 + 连接池 | [查看文档](http_client.md) |
 | **Controller** | Gin基础控制器 | [查看文档](controller.md) |
 | **Middlewares** | Gin中间件集合 | [查看文档](middlewares.md) |
+| **Pay** | 微信 APIv3 / 支付宝 RSA2 支付 | [查看文档](pay.md) |
 
 ## 🚀 快速开始
 
@@ -105,6 +106,9 @@ func main() {
 - [如何定义业务错误码](errors.md#示例3自定义业务错误码)
 - [错误响应格式](errors.md#示例4错误响应格式)
 
+### 💳 我想接入支付
+- [Pay 模块文档](pay.md) - 微信 JSAPI/Native、支付宝 APP/当面付、查单与回调
+
 ## 🎓 学习路径
 
 ### 入门级（必学）
@@ -123,6 +127,7 @@ func main() {
 
 7. [Traffic](traffic.md) - 流量控制
 8. [Milvus](milvus.md) - 向量数据库（AI场景）
+9. [Pay](pay.md) - 支付对接（微信 / 支付宝）
 
 ## 💡 常见问题
 
@@ -163,5 +168,5 @@ A: 逐步集成，先加日志，再加追踪，最后加监控。详见 [最佳
 
 ---
 
-**最后更新时间**: 2024-02-10
-**文档版本**: v1.0
+**最后更新时间**: 2026-04-22
+**文档版本**: v1.1

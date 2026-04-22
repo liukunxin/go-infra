@@ -31,6 +31,7 @@
 | **milvus** | Milvus向量数据库客户端（连接池） | [查看文档](docs/milvus.md) |
 | **traffic** | 流量控制（限流/熔断接口） | [查看文档](docs/traffic.md) |
 | **http_client** | HTTP客户端（连接池复用） | [查看文档](docs/http_client.md) |
+| **pay** | 微信支付 APIv3 / 支付宝 RSA2 | [查看文档](docs/pay.md) |
 | **controller** | Gin基础控制器（统一响应格式） | [查看文档](docs/controller.md) |
 | **middlewares** | Gin中间件（日志/追踪/CORS等） | [查看文档](docs/middlewares.md) |
 
@@ -105,6 +106,7 @@ func main() {
 ### 工具模块
 
 - [HTTP客户端](docs/http_client.md) - 带连接池的HTTP客户端
+- [支付 (pay)](docs/pay.md) - 微信 / 支付宝支付封装
 - [流量控制 (traffic)](docs/traffic.md) - 限流/熔断接口
 - [中间件 (middlewares)](docs/middlewares.md) - Gin常用中间件
 

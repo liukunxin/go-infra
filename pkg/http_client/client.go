@@ -29,7 +29,7 @@ func NewClient(cfg Config) *Client {
 	if cfg.TLSHandshakeTimeout == 0 {
 		cfg.TLSHandshakeTimeout = 10 * time.Second
 	}
-	
+
 	transport := &http.Transport{
 		MaxIdleConns:        cfg.MaxIdleConns,
 		MaxIdleConnsPerHost: cfg.MaxIdleConnsPerHost,
@@ -50,6 +50,14 @@ func NewClient(cfg Config) *Client {
 	return &Client{
 		httpClient: client,
 	}
+}
+
+// HTTPClient 返回底层标准库 *http.Client，便于注入依赖 *http.Client 的模块（例如 pkg/pay）。
+func (c *Client) HTTPClient() *http.Client {
+	if c == nil {
+		return nil
+	}
+	return c.httpClient
 }
 
 // Get 发送 GET 请求
