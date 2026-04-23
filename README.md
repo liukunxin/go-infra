@@ -20,20 +20,27 @@
 
 ## 📦 功能模块
 
-| 模块 | 说明 | 文档 |
-|-----|------|------|
-| **errors** | 统一错误处理和HTTP状态码封装 | [查看文档](docs/errors.md) |
-| **log** | 高性能异步日志库（支持链路追踪） | [查看文档](docs/log.md) |
-| **trace** | 分布式链路追踪（基于OpenTelemetry） | [查看文档](docs/trace.md) |
-| **metrics** | Prometheus监控指标采集 | [查看文档](docs/metrics.md) |
-| **mysql** | MySQL/GORM客户端（连接池管理） | [查看文档](docs/mysql.md) |
-| **redis** | Redis客户端（支持单机/集群） | [查看文档](docs/redis.md) |
-| **milvus** | Milvus向量数据库客户端（连接池） | [查看文档](docs/milvus.md) |
-| **traffic** | 流量控制（限流/熔断接口） | [查看文档](docs/traffic.md) |
-| **http_client** | HTTP客户端（连接池复用） | [查看文档](docs/http_client.md) |
-| **pay** | 微信支付 APIv3 / 支付宝 RSA2 | [查看文档](docs/pay.md) |
-| **controller** | Gin基础控制器（统一响应格式） | [查看文档](docs/controller.md) |
-| **middlewares** | Gin中间件（日志/追踪/CORS等） | [查看文档](docs/middlewares.md) |
+| 层级 | 模块 | 说明 | 文档 |
+|------|------|------|------|
+| **base** | **log** | 高性能异步日志（支持链路追踪） | [查看文档](pkg/base/log/README.md) |
+| **base** | **trace** | 分布式链路追踪（OpenTelemetry） | [查看文档](pkg/base/trace/README.md) |
+| **base** | **errors** | 统一错误处理和 HTTP 状态码封装 | [查看文档](pkg/base/errors/README.md) |
+| **base** | **env** | 环境变量与模式管理 | `pkg/base/env/` |
+| **base** | **uuid** | Snowflake / UUID ID 生成 | `pkg/base/uuid/` |
+| **base** | **xutil** | 通用泛型工具函数 | `pkg/base/xutil/` |
+| **infra** | **mysql** | MySQL/GORM 客户端（连接池管理） | [查看文档](pkg/infra/mysql/README.md) |
+| **infra** | **redis** | Redis 客户端（单机/集群） | [查看文档](pkg/infra/redis/README.md) |
+| **infra** | **milvus** | Milvus 向量数据库客户端（连接池） | [查看文档](pkg/infra/milvus/README.md) |
+| **infra** | **metrics** | Prometheus 监控指标采集 | [查看文档](pkg/infra/metrics/README.md) |
+| **infra** | **traffic** | 流量控制（限流/熔断接口） | [查看文档](pkg/infra/traffic/README.md) |
+| **infra** | **http_client** | HTTP 客户端（连接池复用） | [查看文档](pkg/infra/http_client/README.md) |
+| **infra** | **apollo** | Apollo 配置中心 | `pkg/infra/apollo/` |
+| **infra** | **ks3** | KS3 对象存储 | `pkg/infra/ks3/` |
+| **biz** | **login** | 多方式登录（密码/手机/邮箱/微信）+ JWT | [查看文档](pkg/biz/login/README.md) |
+| **biz** | **account** | 账号管理与多登录方式绑定 | [查看文档](pkg/biz/account/README.md) |
+| **biz** | **pay** | 微信支付 APIv3 / 支付宝 RSA2 | [查看文档](pkg/biz/pay/README.md) |
+| **biz** | **controller** | Gin 基础控制器（统一响应格式） | `pkg/biz/controller/` |
+| **biz** | **middlewares** | Gin 中间件（日志/追踪/CORS 等） | `pkg/biz/middlewares/` |
 
 ## 🚀 快速开始
 
@@ -50,16 +57,16 @@ package main
 
 import (
     "github.com/gin-gonic/gin"
-    "github.com/liukunxin/go-infra/pkg/log"
-    "github.com/liukunxin/go-infra/pkg/trace"
-    "github.com/liukunxin/go-infra/pkg/metrics"
-    "github.com/liukunxin/go-infra/pkg/middlewares"
+    "github.com/liukunxin/go-infra/pkg/base/log"
+    "github.com/liukunxin/go-infra/pkg/base/trace"
+    "github.com/liukunxin/go-infra/pkg/infra/metrics"
+    "github.com/liukunxin/go-infra/pkg/biz/middlewares"
 )
 
 func main() {
     // 1. 初始化日志
     log.Init(log.Config{
-        Level: "info",
+        Level: log.LevelInfo,
     })
 
     // 2. 初始化链路追踪
@@ -90,25 +97,26 @@ func main() {
 
 ## 📚 详细文档
 
-### 核心模块
+### pkg/base — 原子基础能力
 
-- [错误处理 (errors)](docs/errors.md) - 统一的错误处理和状态码管理
-- [日志系统 (log)](docs/log.md) - 高性能异步日志，支持链路追踪
-- [链路追踪 (trace)](docs/trace.md) - 基于OpenTelemetry的分布式追踪
-- [监控指标 (metrics)](docs/metrics.md) - Prometheus指标采集
+- [错误处理 (errors)](pkg/base/errors/README.md) - 统一的错误处理和状态码管理
+- [日志系统 (log)](pkg/base/log/README.md) - 高性能异步日志，支持链路追踪
+- [链路追踪 (trace)](pkg/base/trace/README.md) - 基于 OpenTelemetry 的分布式追踪
 
-### 数据存储
+### pkg/infra — 基础设施能力
 
-- [MySQL](docs/mysql.md) - GORM封装，连接池管理
-- [Redis](docs/redis.md) - Redis客户端，支持单机/集群模式
-- [Milvus](docs/milvus.md) - 向量数据库客户端，连接池管理
+- [MySQL](pkg/infra/mysql/README.md) - GORM 封装，连接池管理
+- [Redis](pkg/infra/redis/README.md) - Redis 客户端，支持单机/集群模式
+- [Milvus](pkg/infra/milvus/README.md) - 向量数据库客户端，连接池管理
+- [监控指标 (metrics)](pkg/infra/metrics/README.md) - Prometheus 指标采集
+- [HTTP 客户端](pkg/infra/http_client/README.md) - 带连接池的 HTTP 客户端
+- [流量控制 (traffic)](pkg/infra/traffic/README.md) - 限流/熔断接口
 
-### 工具模块
+### pkg/biz — 业务基础能力
 
-- [HTTP客户端](docs/http_client.md) - 带连接池的HTTP客户端
-- [支付 (pay)](docs/pay.md) - 微信 / 支付宝支付封装
-- [流量控制 (traffic)](docs/traffic.md) - 限流/熔断接口
-- [中间件 (middlewares)](docs/middlewares.md) - Gin常用中间件
+- [登录 (login)](pkg/biz/login/README.md) - 多方式登录 + JWT
+- [账号 (account)](pkg/biz/account/README.md) - 账号管理与登录绑定
+- [支付 (pay)](pkg/biz/pay/README.md) - 微信 / 支付宝支付封装
 
 ## 🏗️ 架构设计
 
@@ -173,7 +181,7 @@ func main() {
 ### 错误处理
 
 ```go
-import kerr "github.com/liukunxin/go-infra/pkg/errors"
+import kerr "github.com/liukunxin/go-infra/pkg/base/errors"
 
 // 业务逻辑中
 if err != nil {
