@@ -1,20 +1,22 @@
 package mysql
 
 import (
-	"gorm.io/gorm/logger"
 	"time"
+
+	"gorm.io/gorm/logger"
 )
 
-// Config SDK 配置
+// Config holds MySQL connection and pool parameters.
+// All fields have sensible defaults applied by NewClient.
 type Config struct {
-	DSN               string          `yaml:"dsn"`                                            // 完整 DSN，如: user:pass@tcp(host:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local
-	MaxOpenConns      int             `yaml:"max_open_conns"`                                 // 最大打开连接数
-	MaxIdleConns      int             `yaml:"max_idle_conns"`                                 // 最大空闲连接数
-	ConnMaxLifetime   time.Duration   `yaml:"conn_max_lifetime"`                              // 连接最大存活时长
-	ConnMaxIdleTime   time.Duration   `json:"conn_max_idle_time" yaml:"conn_max_idle_time"`   // 连接最大空闲时长 (Go 1.15+)
-	EnablePrepareStmt bool            `json:"enable_prepare_stmt" yaml:"enable_prepare_stmt"` // 是否启用 prepared statement cache (gorm.Config)。默认 true 推荐用于读多写少场景
-	SkipDefaultTx     bool            `json:"skip_default_tx" yaml:"skip_default_tx"`         // 是否跳过默认事务（可提高写入性能，但风险更高）
-	ConnRetryTimes    int             `json:"conn_retry_times" yaml:"conn_retry_times"`       // 连接初始化重试次数
-	ConnRetryInterval time.Duration   `json:"conn_retry_interval" yaml:"conn_retry_interval"` // 重试间隔
-	GormLogLevel      logger.LogLevel `json:"gorm_log_level" yaml:"gorm_log_level"`
+	DSN               string          `yaml:"dsn"                  json:"dsn"`                   // full DSN: user:pass@tcp(host:3306)/db?charset=utf8mb4&parseTime=True&loc=Local
+	MaxOpenConns      int             `yaml:"max_open_conns"       json:"max_open_conns"`        // default 100
+	MaxIdleConns      int             `yaml:"max_idle_conns"       json:"max_idle_conns"`        // default 10
+	ConnMaxLifetime   time.Duration   `yaml:"conn_max_lifetime"    json:"conn_max_lifetime"`     // default 1h
+	ConnMaxIdleTime   time.Duration   `yaml:"conn_max_idle_time"   json:"conn_max_idle_time"`    // default 10m
+	EnablePrepareStmt bool            `yaml:"enable_prepare_stmt"  json:"enable_prepare_stmt"`  // prepared statement cache; recommended for read-heavy workloads
+	SkipDefaultTx     bool            `yaml:"skip_default_tx"      json:"skip_default_tx"`      // skip implicit transactions on writes; improves throughput but reduces safety
+	ConnRetryTimes    int             `yaml:"conn_retry_times"     json:"conn_retry_times"`     // default 3
+	ConnRetryInterval time.Duration   `yaml:"conn_retry_interval"  json:"conn_retry_interval"`  // default 2s
+	GormLogLevel      logger.LogLevel `yaml:"gorm_log_level"       json:"gorm_log_level"`
 }

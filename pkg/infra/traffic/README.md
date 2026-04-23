@@ -1,431 +1,189 @@
 # Traffic - 流量控制
 
-流量控制接口定义，支持限流、熔断等流控策略的扩展实现。
+限流 + 熔断一体化解决方案，基于统一 `Controller` 接口，支持单独使用或组合叠加。
 
-## 📖 功能特性
+---
 
-- ✅ 统一的流量控制接口
-- ✅ 支持多种流控策略（限流/熔断）
-- ✅ 可插拔的 Controller 实现
-- ✅ 默认空实现（DummyController）
-- ✅ 线程安全
-- ✅ 易于扩展
+## 核心概念
 
-## 🚀 快速开始
+```
+业务代码调用 TryPass("资源名")
+    ├── 允许通过 → 返回 Pass token
+    │       ├── 业务成功 → pass.Done()
+    │       └── 业务失败 → pass.Error(err)
+    └── 拒绝 → 返回 BlockError（含拒绝原因）
+```
 
-### 基础用法
+- **Pass.Done()** — 告知流控"本次请求成功"
+- **Pass.Error(err)** — 告知流控"本次请求失败"（熔断器会计入失败率）
+- 两者**只有第一次调用生效**，可以安全地 `defer pass.Done()` 再按需调 `pass.Error(err)`
+
+---
+
+## 限流（RateLimitController）
+
+使用令牌桶算法，限制每秒最多允许多少请求通过。
+
+### 初始化
 
 ```go
-package main
+import "github.com/yourorg/go-infra/pkg/infra/traffic"
 
-import (
-    "context"
-    "github.com/liukunxin/go-infra/pkg/traffic"
-    "log"
-)
+// 每秒最多 500 个请求，允许瞬间突发 50 个
+ctrl := traffic.NewRateLimitController(500, 50)
+traffic.Init(traffic.WithController(ctrl))
+```
 
-func main() {
-    // 1. 使用默认实现（不做任何限制）
-    // traffic 模块会自动初始化为 DummyController
+### 使用
 
-    // 2. 尝试通过流控
+```go
+func createOrder(ctx context.Context) error {
     pass, blockErr := traffic.GetController().TryPass("order_create")
     if blockErr != nil {
-        log.Printf("请求被限流: %s", blockErr.BlockMsg())
-        return
+        // 超出限流阈值，直接返回，不执行业务逻辑
+        return errors.New("系统繁忙，请稍后重试")
     }
-    defer pass.Done()
+    defer pass.Done()  // 正常结束时标记成功
 
-    // 3. 业务逻辑
-    err := processOrder()
-    if err != nil {
-        pass.Error(err)  // 记录错误
-        return
+    // 执行业务逻辑
+    if err := doCreateOrder(ctx); err != nil {
+        pass.Error(err)
+        return err
     }
+    return nil
 }
 ```
 
-## 📋 接口定义
+---
 
-### Controller 接口
+## 熔断（CircuitBreakerController）
+
+当某个资源的错误率超过阈值时，自动"断开"保护下游，一段时间后自动探活恢复。
+
+### 三种状态
+
+```
+Closed（正常）──[错误率超阈值]──▶ Open（熔断）
+Open   ──[冷却期结束]──▶ Half-Open（探活）
+Half-Open ──[探活成功]──▶ Closed（恢复）
+Half-Open ──[探活失败]──▶ Open（继续熔断）
+```
+
+### 初始化
 
 ```go
+ctrl := traffic.NewCircuitBreakerController(traffic.CircuitBreakerConfig{
+    ErrorRateThreshold:       0.5,              // 错误率超 50% 则熔断
+    MinRequests:              10,               // 窗口内至少 10 次请求才触发判断
+    WindowSize:               20,               // 滑动窗口大小（最近 20 次请求）
+    CooldownPeriod:           5 * time.Second,  // 熔断冷却 5 秒后进入探活
+    HalfOpenMaxRequests:      1,                // 探活期最多允许 1 个请求通过
+    HalfOpenSuccessThreshold: 1,                // 探活成功 1 次即恢复
+})
+traffic.Init(traffic.WithController(ctrl))
+```
+
+### 使用（与限流完全相同的调用方式）
+
+```go
+func callDownstream(ctx context.Context) error {
+    pass, blockErr := traffic.GetController().TryPass("payment_service")
+    if blockErr != nil {
+        // 熔断器打开，快速失败
+        return errors.New("支付服务暂时不可用")
+    }
+    defer pass.Done()
+
+    if err := callPaymentService(ctx); err != nil {
+        pass.Error(err)   // 失败计入熔断器
+        return err
+    }
+    return nil
+}
+```
+
+### 查看熔断状态（健康检查 / 监控）
+
+```go
+cb := traffic.GetController().(*traffic.CircuitBreakerController)
+for _, s := range cb.States() {
+    fmt.Printf("资源: %-20s 状态: %-10s 错误率: %.1f%% 请求数: %d\n",
+        s.Resource, s.State, s.FailRate*100, s.Total)
+}
+```
+
+---
+
+## 限流 + 熔断组合（CompositeController）
+
+同时启用两种策略时，**先限流再熔断**，任一拒绝即返回。
+
+```go
+rateLimiter := traffic.NewRateLimitController(500, 50)
+circuitBreaker := traffic.NewCircuitBreakerController(traffic.CircuitBreakerConfig{
+    ErrorRateThreshold: 0.5,
+    MinRequests:        10,
+    CooldownPeriod:     5 * time.Second,
+})
+
+ctrl := traffic.NewCompositeController(rateLimiter, circuitBreaker)
+traffic.Init(traffic.WithController(ctrl))
+```
+
+调用方式**不变**，业务代码无需关心底层用了哪种策略：
+
+```go
+pass, blockErr := traffic.GetController().TryPass("order_create")
+if blockErr != nil {
+    switch blockErr.BlockType() {
+    case traffic.BlockTypeRateLimit:
+        return errors.New("请求频率过高，请稍后重试")
+    case traffic.BlockTypeCircuitBreaking:
+        return errors.New("服务暂时不可用，请稍后重试")
+    }
+}
+defer pass.Done()
+```
+
+---
+
+## 不做任何限制（测试 / 默认）
+
+```go
+// Init 不传参数，或使用 DummyController
+traffic.Init()  // 等价于 traffic.Init(traffic.WithController(traffic.NewDummyController()))
+```
+
+---
+
+## 推荐配置参考
+
+| 场景                   | 建议配置                                                              |
+|------------------------|----------------------------------------------------------------------|
+| 对外 API 限流           | `RateLimit(1000, 100)` — QPS 1000，突发 100                          |
+| 调用不稳定下游          | `CircuitBreaker{ErrorRate: 0.5, MinReq: 10, Cooldown: 5s}`           |
+| 对外接口 + 下游保护     | `Composite(RateLimit, CircuitBreaker)`                               |
+
+---
+
+## 接口定义速查
+
+```go
+// Controller — 流量控制器
 type Controller interface {
     TryPass(resource string, opts ...TryPassOption) (Pass, BlockError)
 }
-```
 
-### Pass 接口
-
-```go
+// Pass — 通过令牌，用于回报结果
 type Pass interface {
-    Error(err error)  // 记录错误
-    Done()            // 完成调用
+    Done()           // 标记成功
+    Error(err error) // 标记失败
 }
-```
 
-### BlockError 接口
-
-```go
+// BlockError — 被拒绝时返回的错误
 type BlockError interface {
     error
-    BlockType() BlockType  // 阻塞类型
-    BlockMsg() string      // 阻塞原因
+    BlockType() BlockType  // RateLimit | CircuitBreaking
+    BlockMsg()  string
 }
 ```
-
-### BlockType 类型
-
-```go
-const (
-    BlockTypeLimit           // 限流
-    BlockTypeCircuitBreaking // 熔断
-    BlockTypeInternal        // 内部错误
-)
-```
-
-## 💡 使用示例
-
-### 示例1：在 HTTP Handler 中使用
-
-```go
-func orderHandler(c *gin.Context) {
-    // 尝试通过流控
-    pass, blockErr := traffic.GetController().TryPass("api:/order/create")
-    if blockErr != nil {
-        // 根据类型返回不同错误
-        switch blockErr.BlockType() {
-        case traffic.BlockTypeLimit:
-            c.JSON(429, gin.H{"error": "请求过于频繁"})
-        case traffic.BlockTypeCircuitBreaking:
-            c.JSON(503, gin.H{"error": "服务暂时不可用"})
-        default:
-            c.JSON(500, gin.H{"error": blockErr.BlockMsg()})
-        }
-        return
-    }
-    defer pass.Done()
-
-    // 处理订单
-    order, err := createOrder(c)
-    if err != nil {
-        pass.Error(err)  // 记录错误（用于熔断判断）
-        c.JSON(500, gin.H{"error": err.Error()})
-        return
-    }
-
-    c.JSON(200, order)
-}
-```
-
-### 示例2：在 Service 层使用
-
-```go
-type OrderService struct {
-    // ...
-}
-
-func (s *OrderService) CreateOrder(ctx context.Context, req *CreateOrderReq) (*Order, error) {
-    // 流控检查
-    pass, blockErr := traffic.GetController().TryPass("service:order:create")
-    if blockErr != nil {
-        return nil, fmt.Errorf("流控拒绝: %s", blockErr.BlockMsg())
-    }
-    defer pass.Done()
-
-    // 业务逻辑
-    order, err := s.repo.Create(ctx, req)
-    if err != nil {
-        pass.Error(err)  // 记录错误
-        return nil, err
-    }
-
-    return order, nil
-}
-```
-
-### 示例3：自定义 Controller（Sentinel 实现）
-
-```go
-import (
-    sentinel "github.com/alibaba/sentinel-golang/api"
-    "github.com/alibaba/sentinel-golang/core/base"
-    "github.com/liukunxin/go-infra/pkg/traffic"
-)
-
-type SentinelController struct{}
-
-func (c *SentinelController) TryPass(resource string, opts ...traffic.TryPassOption) (traffic.Pass, traffic.BlockError) {
-    entry, err := sentinel.Entry(resource)
-    if err != nil {
-        // 被流控
-        return nil, &SentinelBlockError{err: err}
-    }
-    
-    return &SentinelPass{entry: entry}, nil
-}
-
-type SentinelPass struct {
-    entry *base.SentinelEntry
-}
-
-func (p *SentinelPass) Error(err error) {
-    sentinel.TraceError(p.entry, err)
-}
-
-func (p *SentinelPass) Done() {
-    p.entry.Exit()
-}
-
-type SentinelBlockError struct {
-    err error
-}
-
-func (e *SentinelBlockError) Error() string {
-    return e.err.Error()
-}
-
-func (e *SentinelBlockError) BlockType() traffic.BlockType {
-    // 根据 Sentinel 错误类型判断
-    return traffic.BlockTypeLimit
-}
-
-func (e *SentinelBlockError) BlockMsg() string {
-    return "请求过于频繁"
-}
-
-// 初始化
-func initSentinel() {
-    // 初始化 Sentinel
-    sentinel.InitDefault()
-    
-    // 配置规则...
-    
-    // 设置自定义 Controller
-    traffic.SetController(&SentinelController{})
-}
-```
-
-### 示例4：自定义限流 Controller
-
-```go
-import (
-    "golang.org/x/time/rate"
-    "sync"
-)
-
-type RateLimitController struct {
-    limiters map[string]*rate.Limiter
-    mu       sync.RWMutex
-}
-
-func NewRateLimitController() *RateLimitController {
-    return &RateLimitController{
-        limiters: make(map[string]*rate.Limiter),
-    }
-}
-
-func (c *RateLimitController) AddRule(resource string, rps int) {
-    c.mu.Lock()
-    defer c.mu.Unlock()
-    c.limiters[resource] = rate.NewLimiter(rate.Limit(rps), rps)
-}
-
-func (c *RateLimitController) TryPass(resource string, opts ...traffic.TryPassOption) (traffic.Pass, traffic.BlockError) {
-    c.mu.RLock()
-    limiter, exists := c.limiters[resource]
-    c.mu.RUnlock()
-
-    if !exists {
-        // 没有规则，直接通过
-        return &dummyPass{}, nil
-    }
-
-    if !limiter.Allow() {
-        return nil, &LimitBlockError{resource: resource}
-    }
-
-    return &dummyPass{}, nil
-}
-
-type LimitBlockError struct {
-    resource string
-}
-
-func (e *LimitBlockError) Error() string {
-    return fmt.Sprintf("资源 %s 访问过于频繁", e.resource)
-}
-
-func (e *LimitBlockError) BlockType() traffic.BlockType {
-    return traffic.BlockTypeLimit
-}
-
-func (e *LimitBlockError) BlockMsg() string {
-    return "请求频率超限"
-}
-
-// 使用示例
-func main() {
-    controller := NewRateLimitController()
-    controller.AddRule("api:/order/create", 100)  // 100 QPS
-    controller.AddRule("api:/user/query", 1000)   // 1000 QPS
-    
-    traffic.SetController(controller)
-}
-```
-
-### 示例5：熔断器实现
-
-```go
-type CircuitBreakerController struct {
-    breakers map[string]*CircuitBreaker
-    mu       sync.RWMutex
-}
-
-type CircuitBreaker struct {
-    failureThreshold int
-    failureCount     int32
-    state            int32  // 0=closed, 1=open
-    lastFailTime     time.Time
-    mu               sync.Mutex
-}
-
-func (cb *CircuitBreaker) TryPass() bool {
-    state := atomic.LoadInt32(&cb.state)
-    if state == 1 {
-        // 熔断状态
-        cb.mu.Lock()
-        defer cb.mu.Unlock()
-        
-        // 检查是否可以半开
-        if time.Since(cb.lastFailTime) > 10*time.Second {
-            atomic.StoreInt32(&cb.state, 0)
-            atomic.StoreInt32(&cb.failureCount, 0)
-            return true
-        }
-        return false
-    }
-    return true
-}
-
-func (cb *CircuitBreaker) RecordError() {
-    count := atomic.AddInt32(&cb.failureCount, 1)
-    if count >= int32(cb.failureThreshold) {
-        cb.mu.Lock()
-        defer cb.mu.Unlock()
-        
-        atomic.StoreInt32(&cb.state, 1)  // 打开熔断器
-        cb.lastFailTime = time.Now()
-    }
-}
-
-func (cb *CircuitBreaker) RecordSuccess() {
-    atomic.StoreInt32(&cb.failureCount, 0)
-}
-```
-
-## 🎯 最佳实践
-
-### 1. 资源命名规范
-
-```go
-// ✅ 好的命名
-"api:/order/create"          // API 路径
-"service:order:query"        // 服务方法
-"db:mysql:query"             // 数据库操作
-"cache:redis:get"            // 缓存操作
-
-// ❌ 不好的命名
-"order"                      // 不够具体
-"api1"                       // 无意义
-```
-
-### 2. 及时调用 Done()
-
-```go
-// ✅ 好的做法
-pass, blockErr := traffic.GetController().TryPass(resource)
-if blockErr != nil {
-    return err
-}
-defer pass.Done()  // 确保调用
-
-// ❌ 不好的做法
-pass, _ := traffic.GetController().TryPass(resource)
-// 忘记调用 Done()
-```
-
-### 3. 记录错误
-
-```go
-// ✅ 好的做法 - 记录错误（用于熔断统计）
-if err := doSomething(); err != nil {
-    pass.Error(err)
-    return err
-}
-
-// ❌ 不好的做法 - 不记录错误
-if err := doSomething(); err != nil {
-    return err  // 熔断器无法统计错误
-}
-```
-
-### 4. 根据场景选择策略
-
-```go
-// API 入口 - 限流
-pass, _ := traffic.GetController().TryPass("api:/order/create")
-
-// 外部调用 - 熔断
-pass, _ := traffic.GetController().TryPass("rpc:payment-service")
-
-// 数据库操作 - 限流+熔断
-pass, _ := traffic.GetController().TryPass("db:mysql:orders")
-```
-
-## 📊 集成流行的流控框架
-
-### Sentinel
-
-```bash
-go get github.com/alibaba/sentinel-golang
-```
-
-### Hystrix
-
-```bash
-go get github.com/afex/hystrix-go
-```
-
-### 自定义实现
-
-```go
-// 实现 Controller 接口即可
-type MyController struct {
-    // ...
-}
-
-func (c *MyController) TryPass(resource string, opts ...traffic.TryPassOption) (traffic.Pass, traffic.BlockError) {
-    // 自定义逻辑
-}
-```
-
-## ⚠️ 注意事项
-
-1. **默认不限流** - DummyController 不做任何限制
-2. **必须调用 Done()** - 用于资源释放和统计
-3. **记录错误** - 熔断器依赖错误统计
-4. **性能开销** - 流控会增加少量性能开销
-5. **合理配置阈值** - 根据实际场景设置限流值
-
-## 🔗 相关模块
-
-- [Metrics](metrics.md) - 流控指标监控
-- [Log](log.md) - 流控日志记录
-- [Middlewares](middlewares.md) - HTTP 流控中间件
-
-## 📖 推荐阅读
-
-- [Sentinel 官方文档](https://sentinelguard.io/zh-cn/)
-- [Hystrix Wiki](https://github.com/Netflix/Hystrix/wiki)
-- [微服务流量控制实践](https://www.alibabacloud.com/blog/595162)

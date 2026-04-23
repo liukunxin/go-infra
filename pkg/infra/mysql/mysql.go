@@ -1,12 +1,3 @@
-// gorm_mysql_sdk.go
-// 简洁高性能的 GORM MySQL SDK
-// 特性：
-// - 支持连接池参数（MaxOpenConns、MaxIdleConns、ConnMaxLifetime、ConnMaxIdleTime）
-// - 启用 prepared statements 缓存、禁用默认事务以提升性能（可配置）
-// - 带重试的连接初始化和健康检查
-// - 事务封装（WithTransaction）和常用包装方法
-// - 支持自定义 logger 和钩子
-
 package mysql
 
 import (
@@ -22,37 +13,36 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Client SDK 客户端
+// Client wraps a gorm.DB with connection-pool lifecycle management.
 type Client struct {
 	cfg   Config
 	DB    *gorm.DB
 	sqlDB *sql.DB
 }
 
-// NewClient 创建并初始化 SDK
+// NewClient creates and validates a MySQL client.
+// It applies connection-pool defaults, retries the initial connection, and runs a ping.
 func NewClient(cfg Config) (*Client, error) {
 	if cfg.DSN == "" {
-		return nil, errors.New("DSN 不能为空")
+		return nil, errors.New("mysql: DSN must not be empty")
 	}
-	// 设置合理的默认值
 	if cfg.ConnRetryTimes <= 0 {
 		cfg.ConnRetryTimes = 3
 	}
 	if cfg.ConnRetryInterval <= 0 {
 		cfg.ConnRetryInterval = 2 * time.Second
 	}
-	// 设置连接池默认值（参考业界最佳实践）
 	if cfg.MaxOpenConns <= 0 {
-		cfg.MaxOpenConns = 100 // 默认最大100个连接，避免数据库连接数过多
+		cfg.MaxOpenConns = 100
 	}
 	if cfg.MaxIdleConns <= 0 {
-		cfg.MaxIdleConns = 10 // 默认保持10个空闲连接，平衡性能和资源
+		cfg.MaxIdleConns = 10
 	}
 	if cfg.ConnMaxLifetime <= 0 {
-		cfg.ConnMaxLifetime = 1 * time.Hour // 默认1小时，避免长时间连接导致的问题
+		cfg.ConnMaxLifetime = time.Hour
 	}
 	if cfg.ConnMaxIdleTime <= 0 {
-		cfg.ConnMaxIdleTime = 10 * time.Minute // 默认10分钟，及时释放不活跃连接
+		cfg.ConnMaxIdleTime = 10 * time.Minute
 	}
 
 	gormCfg := &gorm.Config{
@@ -63,83 +53,73 @@ func NewClient(cfg Config) (*Client, error) {
 
 	var db *gorm.DB
 	var err error
-	// 重试连接
 	for i := 0; i < cfg.ConnRetryTimes; i++ {
 		db, err = gorm.Open(mysql.Open(cfg.DSN), gormCfg)
 		if err == nil {
 			break
 		}
 		if i < cfg.ConnRetryTimes-1 {
-			log.Printf("gorm open failed (attempt %d/%d): %v, retry after %s", i+1, cfg.ConnRetryTimes, err, cfg.ConnRetryInterval)
+			log.Printf("mysql: open failed (attempt %d/%d): %v, retry in %s",
+				i+1, cfg.ConnRetryTimes, err, cfg.ConnRetryInterval)
 			time.Sleep(cfg.ConnRetryInterval)
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to open gorm: %w", err)
+		return nil, fmt.Errorf("mysql: open gorm: %w", err)
 	}
 
-	// 获取底层 sql.DB 操作连接池
 	sqlDB, err := db.DB()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get sql.DB from gorm: %w", err)
+		return nil, fmt.Errorf("mysql: get sql.DB: %w", err)
 	}
 
-	// 连接池配置（已在上面设置了默认值，这里直接应用）
 	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 	sqlDB.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
 
-	client := &Client{
-		cfg:   cfg,
-		DB:    db,
-		sqlDB: sqlDB,
+	c := &Client{cfg: cfg, DB: db, sqlDB: sqlDB}
+
+	if err := c.Ping(context.Background()); err != nil {
+		_ = c.Close()
+		return nil, fmt.Errorf("mysql: ping after open: %w", err)
 	}
 
-	// 简单的一次性健康检查
-	if err := client.Ping(context.Background()); err != nil {
-		// 连接成功但 ping 失败时，尝试关闭并返回错误
-		_ = client.Close()
-		return nil, fmt.Errorf("ping failed after open: %w", err)
-	}
-
-	return client, nil
+	return c, nil
 }
 
-// Ping 健康检查
+// Ping checks connectivity with a 3-second timeout.
 func (c *Client) Ping(ctx context.Context) error {
 	if c == nil || c.sqlDB == nil {
-		return errors.New("client 未初始化")
+		return errors.New("mysql: client not initialized")
 	}
-	// 使用带超时的 context
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	return c.sqlDB.PingContext(ctx)
 }
 
-// Close 关闭底层连接池
+// Close releases all connections in the pool.
 func (c *Client) Close() error {
-	if c == nil {
-		return nil
-	}
-	if c.sqlDB == nil {
+	if c == nil || c.sqlDB == nil {
 		return nil
 	}
 	return c.sqlDB.Close()
 }
 
-// WithTransaction 事务包装，自动提交或回滚
+// WithTransaction runs fn inside a database transaction.
+// Commits on nil return, rolls back on any error.
 func (c *Client) WithTransaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	if c == nil || c.DB == nil {
-		return errors.New("client 未初始化")
+		return errors.New("mysql: client not initialized")
 	}
-	return c.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return fn(tx)
-	})
+	return c.DB.WithContext(ctx).Transaction(fn)
 }
 
-// ExecContext 执行非查询 SQL（例如更新、删除、insert）并返回 RowsAffected
+// ExecContext executes a non-query statement and returns the number of rows affected.
 func (c *Client) ExecContext(ctx context.Context, sqlStr string, args ...interface{}) (int64, error) {
+	if c == nil || c.DB == nil {
+		return 0, errors.New("mysql: client not initialized")
+	}
 	res := c.DB.WithContext(ctx).Exec(sqlStr, args...)
 	if res.Error != nil {
 		return 0, res.Error
@@ -147,70 +127,15 @@ func (c *Client) ExecContext(ctx context.Context, sqlStr string, args ...interfa
 	return res.RowsAffected, nil
 }
 
-// RawQuery 执行原生查询并扫描结果到 dest（dest 必须是指针或切片的指针）
+// RawQuery executes a raw SELECT and scans results into dest (must be a pointer or slice pointer).
 func (c *Client) RawQuery(ctx context.Context, dest interface{}, sqlStr string, args ...interface{}) error {
-	res := c.DB.WithContext(ctx).Raw(sqlStr, args...).Scan(dest)
-	return res.Error
+	if c == nil || c.DB == nil {
+		return errors.New("mysql: client not initialized")
+	}
+	return c.DB.WithContext(ctx).Raw(sqlStr, args...).Scan(dest).Error
 }
 
-// GetGormDB 返回带有 context 的 gorm.DB，便于链式调用
+// GetGormDB returns a gorm.DB scoped to ctx for chained calls.
 func (c *Client) GetGormDB(ctx context.Context) *gorm.DB {
 	return c.DB.WithContext(ctx)
 }
-
-/* 使用示例：
-
-package main
-
-import (
-	"context"
-	"log"
-	"time"
-
-	"your/module/path/gormmysqlsdk"
-	"gorm.io/gorm/logger"
-)
-
-func main() {
-	cfg := gormmysqlsdk.Config{
-		DSN:               "user:password@tcp(127.0.0.1:3306)/testdb?charset=utf8mb4&parseTime=True&loc=Local",
-		MaxOpenConns:      50,
-		MaxIdleConns:      25,
-		ConnMaxLifetime:   time.Hour,
-		ConnMaxIdleTime:   10 * time.Minute,
-		EnablePrepareStmt: true,
-		SkipDefaultTx:     true,
-		ConnRetryTimes:    3,
-		ConnRetryInterval: 2 * time.Second,
-		GormLogLevel:      logger.Silent,
-	}
-
-	client, err := gormmysqlsdk.NewClient(cfg)
-	if err != nil {
-		log.Fatalf("init db failed: %v", err)
-	}
-	defer client.Close()
-
-	ctx := context.Background()
-	// 事务示例
-	err = client.WithTransaction(ctx, func(tx *gorm.DB) error {
-		// tx.Create(&User{...})
-		return nil
-	})
-	if err != nil {
-		log.Printf("tx err: %v", err)
-	}
-}
-*/
-
-// 性能与调优建议：
-// 1) 如果是高并发读场景：开启 PrepareStmt 能减少 SQL 解析成本；同时将读操作尽量设计为只读事务或无事务。
-// 2) 若写操作频繁，请谨慎使用 SkipDefaultTx（跳过默认事务）会提高写入吞吐，但丧失事务隔离带来的保证。
-// 3) 合理设置 MaxOpenConns / MaxIdleConns 与每个连接的最大生命周期，避免频繁建立拆除连接。
-// 4) 若有大量短时间 burst 连接，考虑前端使用连接池或排队限流来平滑流量。
-// 5) 在需要更高性能时可以考虑：读写分离（proxy + 主从），使用连接复用及连接持久化机制。
-
-// 扩展点建议：
-// - 集成 Prometheus 指标：记录 db_stats（OpenConnections, InUse, Idle, WaitCount, WaitDuration）
-// - 支持多 DB 实例注册与获取（通过名字注册多个 *Client）
-// - 支持动态调整连接池参数（热更新）

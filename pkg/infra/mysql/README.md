@@ -1,486 +1,162 @@
-# MySQL - 数据库客户端
+# MySQL 客户端
 
-基于 GORM 的 MySQL 客户端封装，提供连接池管理、事务支持和合理的默认配置。
+基于 [GORM](https://gorm.io) 的 MySQL 封装，内置连接池、重试初始化、事务助手和健康检查，开箱即用。
 
-## 📖 功能特性
+---
 
-- ✅ 基于 GORM v2
-- ✅ 连接池自动管理
-- ✅ 合理的默认配置
-- ✅ 自动重连机制
-- ✅ 事务封装
-- ✅ PreparedStatement 缓存
-- ✅ 健康检查
+## 快速上手
 
-## 🚀 快速开始
-
-### 基础用法
+### 1. 初始化（程序启动时调用一次）
 
 ```go
-package main
-
-import (
-    "context"
-    "log"
-    "github.com/liukunxin/go-infra/pkg/mysql"
-    "gorm.io/gorm/logger"
-)
+import "github.com/yourorg/go-infra/pkg/infra/mysql"
 
 func main() {
-    // 1. 初始化（使用默认配置）
-    mysql.Init(mysql.Config{
-        DSN: "user:password@tcp(127.0.0.1:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local",
-    })
+    cfg := mysql.Config{
+        DSN:             "root:password@tcp(127.0.0.1:3306)/mydb?charset=utf8mb4&parseTime=True&loc=Local",
+        MaxOpenConns:    50,   // 最大连接数，默认 20
+        MaxIdleConns:    10,   // 最大空闲连接，默认 5
+        ConnMaxLifetime: time.Hour,
+        ConnMaxIdleTime: 10 * time.Minute,
+    }
 
-    // 2. 获取客户端
-    client := mysql.GetClient()
-
-    // 3. 基础查询
-    var users []User
-    ctx := context.Background()
-    err := client.GetGormDB(ctx).Find(&users).Error
-    if err != nil {
-        log.Fatal(err)
+    if err := mysql.Init(cfg); err != nil {
+        log.Fatalf("mysql init: %v", err)
     }
 }
+```
 
+### 2. 获取客户端
+
+```go
+db := mysql.GetClient()   // 如果未初始化会 panic
+```
+
+---
+
+## 常用操作
+
+### 查询单条记录
+
+```go
 type User struct {
-    ID   uint   `gorm:"primarykey"`
-    Name string `gorm:"column:name"`
-    Age  int    `gorm:"column:age"`
-}
-```
-
-## 📋 配置选项
-
-### Config 结构
-
-```go
-type Config struct {
-    DSN               string          // 数据库连接字符串
-    MaxOpenConns      int             // 最大打开连接数（默认100）
-    MaxIdleConns      int             // 最大空闲连接数（默认10）
-    ConnMaxLifetime   time.Duration   // 连接最大存活时间（默认1小时）
-    ConnMaxIdleTime   time.Duration   // 连接最大空闲时间（默认10分钟）
-    EnablePrepareStmt bool            // 启用预编译语句缓存（默认false）
-    SkipDefaultTx     bool            // 跳过默认事务（默认false）
-    ConnRetryTimes    int             // 连接重试次数（默认3）
-    ConnRetryInterval time.Duration   // 重试间隔（默认2秒）
-    GormLogLevel      logger.LogLevel // GORM日志级别
-}
-```
-
-### 默认配置说明
-
-```go
-// 使用默认配置初始化
-mysql.Init(mysql.Config{
-    DSN: "...",
-    // 以下为自动应用的默认值：
-    // MaxOpenConns: 100      - 最大连接数
-    // MaxIdleConns: 10       - 空闲连接数
-    // ConnMaxLifetime: 1h    - 连接最大存活1小时
-    // ConnMaxIdleTime: 10m   - 空闲连接10分钟回收
-    // ConnRetryTimes: 3      - 连接失败重试3次
-    // ConnRetryInterval: 2s  - 重试间隔2秒
-})
-```
-
-## 💡 使用示例
-
-### 示例1：完整配置
-
-```go
-func initDB() {
-    mysql.Init(mysql.Config{
-        DSN:               "user:pass@tcp(127.0.0.1:3306)/db?charset=utf8mb4&parseTime=True&loc=Local",
-        MaxOpenConns:      200,             // 高并发场景
-        MaxIdleConns:      20,              // 保持更多空闲连接
-        ConnMaxLifetime:   2 * time.Hour,   // 2小时回收
-        ConnMaxIdleTime:   15 * time.Minute, // 15分钟回收空闲
-        EnablePrepareStmt: true,            // 启用预编译（提升性能）
-        SkipDefaultTx:     true,            // 跳过默认事务（提升写入性能）
-        GormLogLevel:      logger.Info,     // 开发环境显示SQL
-    })
-}
-```
-
-### 示例2：基础 CRUD
-
-```go
-func userService() {
-    client := mysql.GetClient()
-    ctx := context.Background()
-    db := client.GetGormDB(ctx)
-
-    // 创建
-    user := &User{Name: "张三", Age: 25}
-    db.Create(user)
-
-    // 查询单个
-    var foundUser User
-    db.Where("name = ?", "张三").First(&foundUser)
-
-    // 查询列表
-    var users []User
-    db.Where("age > ?", 18).Find(&users)
-
-    // 更新
-    db.Model(&foundUser).Update("age", 26)
-
-    // 删除
-    db.Delete(&foundUser)
-}
-```
-
-### 示例3：事务处理
-
-```go
-func transferMoney(ctx context.Context, fromUserID, toUserID int64, amount float64) error {
-    client := mysql.GetClient()
-
-    // 使用事务封装
-    return client.WithTransaction(ctx, func(tx *gorm.DB) error {
-        // 扣款
-        if err := tx.Model(&Account{}).
-            Where("user_id = ?", fromUserID).
-            Update("balance", gorm.Expr("balance - ?", amount)).Error; err != nil {
-            return err  // 自动回滚
-        }
-
-        // 加款
-        if err := tx.Model(&Account{}).
-            Where("user_id = ?", toUserID).
-            Update("balance", gorm.Expr("balance + ?", amount)).Error; err != nil {
-            return err  // 自动回滚
-        }
-
-        return nil  // 自动提交
-    })
-}
-```
-
-### 示例4：原始 SQL
-
-```go
-// 执行原始 SQL 查询
-type Result struct {
-    UserID int64
-    Total  float64
+    ID   uint   `gorm:"primaryKey"`
+    Name string
+    Age  int
 }
 
-func queryUserTotal(ctx context.Context, userID int64) (*Result, error) {
-    client := mysql.GetClient()
-    var result Result
-
-    sql := "SELECT user_id, SUM(amount) as total FROM orders WHERE user_id = ?"
-    err := client.RawQuery(ctx, &result, sql, userID)
-    return &result, err
-}
-
-// 执行原始 SQL 更新
-func batchUpdate(ctx context.Context) error {
-    client := mysql.GetClient()
-    sql := "UPDATE users SET status = ? WHERE created_at < ?"
-    rows, err := client.ExecContext(ctx, sql, "inactive", time.Now().AddDate(0, -6, 0))
-    log.Printf("更新了 %d 行", rows)
+var user User
+err := mysql.GetClient().DB.Where("id = ?", 1).First(&user).Error
+if err != nil {
+    if errors.Is(err, gorm.ErrRecordNotFound) {
+        // 记录不存在
+    }
     return err
 }
+fmt.Println(user.Name)
 ```
 
-### 示例5：复杂查询
+### 查询多条记录
 
 ```go
-func complexQuery(ctx context.Context) ([]User, error) {
-    client := mysql.GetClient()
-    db := client.GetGormDB(ctx)
-
-    var users []User
-    err := db.
-        Select("users.*, COUNT(orders.id) as order_count").
-        Joins("LEFT JOIN orders ON orders.user_id = users.id").
-        Where("users.status = ?", "active").
-        Group("users.id").
-        Having("order_count > ?", 5).
-        Order("order_count DESC").
-        Limit(10).
-        Find(&users).Error
-
-    return users, err
-}
+var users []User
+err := mysql.GetClient().DB.Where("age > ?", 18).Find(&users).Error
 ```
 
-### 示例6：批量操作
+### 插入
 
 ```go
-func batchInsert(ctx context.Context, users []User) error {
-    client := mysql.GetClient()
-    db := client.GetGormDB(ctx)
-
-    // 批量插入（自动分批）
-    return db.CreateInBatches(users, 100).Error  // 每批100条
-}
-
-func batchUpdate(ctx context.Context) error {
-    client := mysql.GetClient()
-    db := client.GetGormDB(ctx)
-
-    // 批量更新
-    return db.Model(&User{}).
-        Where("status = ?", "pending").
-        Updates(map[string]interface{}{
-            "status":     "active",
-            "updated_at": time.Now(),
-        }).Error
-}
+user := User{Name: "Alice", Age: 20}
+err := mysql.GetClient().DB.Create(&user).Error
 ```
 
-## 🔧 高级用法
-
-### 分页查询
+### 更新
 
 ```go
-func getPaginatedUsers(ctx context.Context, page, pageSize int) ([]User, int64, error) {
-    client := mysql.GetClient()
-    db := client.GetGormDB(ctx)
-
-    var users []User
-    var total int64
-
-    // 查询总数
-    db.Model(&User{}).Count(&total)
-
-    // 分页查询
-    offset := (page - 1) * pageSize
-    err := db.Offset(offset).Limit(pageSize).Find(&users).Error
-
-    return users, total, err
-}
+// 更新指定字段（避免零值覆盖）
+err := mysql.GetClient().DB.Model(&User{}).Where("id = ?", 1).
+    Updates(map[string]interface{}{"name": "Bob", "age": 21}).Error
 ```
 
-### 软删除
+### 删除
 
 ```go
-type User struct {
-    ID        uint   `gorm:"primarykey"`
-    Name      string
-    DeletedAt gorm.DeletedAt `gorm:"index"`  // 软删除字段
-}
-
-func softDelete(ctx context.Context, userID uint) error {
-    client := mysql.GetClient()
-    db := client.GetGormDB(ctx)
-
-    // 软删除（只更新 deleted_at 字段）
-    return db.Delete(&User{}, userID).Error
-}
-
-func findWithDeleted(ctx context.Context) ([]User, error) {
-    client := mysql.GetClient()
-    db := client.GetGormDB(ctx)
-
-    var users []User
-    // 包含软删除的记录
-    err := db.Unscoped().Find(&users).Error
-    return users, err
-}
+err := mysql.GetClient().DB.Where("id = ?", 1).Delete(&User{}).Error
 ```
 
-### 悲观锁
+---
+
+## 事务
 
 ```go
-func updateWithLock(ctx context.Context, userID int64) error {
-    client := mysql.GetClient()
-
-    return client.WithTransaction(ctx, func(tx *gorm.DB) error {
-        var user User
-        // 加锁查询
-        if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-            Where("id = ?", userID).
-            First(&user).Error; err != nil {
-            return err
-        }
-
-        // 更新
-        user.Balance += 100
-        return tx.Save(&user).Error
-    })
-}
-```
-
-### 关联查询
-
-```go
-type User struct {
-    ID     uint
-    Name   string
-    Orders []Order `gorm:"foreignKey:UserID"`
-}
-
-type Order struct {
-    ID     uint
-    UserID uint
-    Amount float64
-}
-
-func getUserWithOrders(ctx context.Context, userID uint) (*User, error) {
-    client := mysql.GetClient()
-    db := client.GetGormDB(ctx)
-
-    var user User
-    // 预加载关联数据
-    err := db.Preload("Orders").First(&user, userID).Error
-    return &user, err
-}
-```
-
-## 🎯 最佳实践
-
-### 1. 使用合理的连接池配置
-
-```go
-// 开发环境
-mysql.Init(mysql.Config{
-    DSN:          "...",
-    MaxOpenConns: 50,   // 较小的连接池
-    MaxIdleConns: 5,
-})
-
-// 生产环境（高并发）
-mysql.Init(mysql.Config{
-    DSN:          "...",
-    MaxOpenConns: 200,  // 根据数据库能力调整
-    MaxIdleConns: 20,
-})
-
-// 生产环境（低并发）
-mysql.Init(mysql.Config{
-    DSN:          "...",
-    MaxOpenConns: 100,  // 使用默认值
-    MaxIdleConns: 10,
-})
-```
-
-### 2. 启用 PreparedStatement 缓存
-
-```go
-// 适合读多写少的场景
-mysql.Init(mysql.Config{
-    DSN:               "...",
-    EnablePrepareStmt: true,  // 减少 SQL 解析开销
-})
-```
-
-### 3. 合理使用事务
-
-```go
-// ✅ 好的做法 - 小事务
-func updateUser(ctx context.Context, user *User) error {
-    return client.WithTransaction(ctx, func(tx *gorm.DB) error {
-        return tx.Save(user).Error
-    })
-}
-
-// ❌ 不好的做法 - 大事务（长时间持有锁）
-func bigTransaction(ctx context.Context) error {
-    return client.WithTransaction(ctx, func(tx *gorm.DB) error {
-        // 大量操作...
-        time.Sleep(10 * time.Second)  // 危险！
-        return nil
-    })
-}
-```
-
-### 4. 使用上下文传递
-
-```go
-// ✅ 好的做法 - 传递 context
-func queryUser(ctx context.Context, id int64) (*User, error) {
-    db := client.GetGormDB(ctx)  // 带上下文
-    var user User
-    err := db.First(&user, id).Error
-    return &user, err
-}
-
-// ❌ 不好的做法 - 不传递 context
-func queryUser(id int64) (*User, error) {
-    db := client.GetGormDB(context.Background())
-    // ...
-}
-```
-
-### 5. 避免 N+1 查询
-
-```go
-// ❌ 不好的做法 - N+1 查询
-func getUsers() []User {
-    var users []User
-    db.Find(&users)
-    for i := range users {
-        db.Model(&users[i]).Association("Orders").Find(&users[i].Orders)  // N次查询！
+err := mysql.GetClient().Transaction(ctx, func(tx *gorm.DB) error {
+    if err := tx.Create(&Order{UserID: 1, Amount: 100}).Error; err != nil {
+        return err // 返回非 nil 会自动回滚
     }
-    return users
-}
-
-// ✅ 好的做法 - 预加载
-func getUsers() []User {
-    var users []User
-    db.Preload("Orders").Find(&users)  // 只需2次查询
-    return users
-}
+    if err := tx.Model(&Account{}).Where("user_id = ?", 1).
+        UpdateColumn("balance", gorm.Expr("balance - ?", 100)).Error; err != nil {
+        return err
+    }
+    return nil // 返回 nil 自动提交
+})
 ```
 
-## 📊 性能优化
+---
 
-### 索引优化
+## 执行原生 SQL
 
 ```go
-type User struct {
-    ID    uint   `gorm:"primarykey"`
-    Email string `gorm:"uniqueIndex"`        // 唯一索引
-    Name  string `gorm:"index"`              // 普通索引
-    Age   int    `gorm:"index:idx_age_city"` // 联合索引
-    City  string `gorm:"index:idx_age_city"` // 联合索引
+// Exec（INSERT / UPDATE / DELETE）
+result, err := mysql.GetClient().ExecContext(ctx,
+    "UPDATE users SET status = ? WHERE id = ?", 1, 42)
+if err != nil {
+    return err
+}
+fmt.Println("受影响行数:", result.RowsAffected)
+
+// RawQuery（SELECT）
+type Row struct {
+    Name  string
+    Count int
+}
+var rows []Row
+err = mysql.GetClient().RawQuery(ctx, &rows,
+    "SELECT name, COUNT(*) AS count FROM users GROUP BY name")
+```
+
+---
+
+## 健康检查
+
+```go
+if err := mysql.GetClient().HealthCheck(ctx); err != nil {
+    // 数据库不可达
 }
 ```
 
-### 批量操作
+---
+
+## 配置说明
+
+| 字段               | 说明                     | 默认值       |
+|--------------------|--------------------------|--------------|
+| `DSN`              | 连接字符串（必填）        | —            |
+| `MaxOpenConns`     | 最大连接数               | 20           |
+| `MaxIdleConns`     | 最大空闲连接             | 5            |
+| `ConnMaxLifetime`  | 连接最长存活时间         | 1h           |
+| `ConnMaxIdleTime`  | 空闲连接最长存活时间     | 10m          |
+| `MaxRetries`       | 初始化重试次数           | 3            |
+| `RetryInterval`    | 重试间隔                 | 2s           |
+| `SlowThreshold`    | 慢查询告警阈值           | 200ms        |
+| `LogLevel`         | GORM 日志级别            | Warn         |
+
+---
+
+## 获取原始 `*gorm.DB`
+
+需要使用 GORM 高级功能时，直接访问 `.DB` 字段：
 
 ```go
-// 批量插入比单条插入快10-100倍
-func batchInsert(users []User) {
-    db.CreateInBatches(users, 1000)  // 每批1000条
-}
+db := mysql.GetClient().DB
+db.Session(&gorm.Session{PrepareStmt: true}).Find(&users)
 ```
-
-### 查询优化
-
-```go
-// 只查询需要的字段
-db.Select("id", "name").Find(&users)
-
-// 使用索引
-db.Where("email = ?", email).First(&user)  // email 有索引
-
-// 避免全表扫描
-db.Where("name LIKE ?", name+"%").Find(&users)  // 前缀匹配可用索引
-```
-
-## ⚠️ 注意事项
-
-1. **DSN 格式要正确** - 包含 `charset=utf8mb4&parseTime=True&loc=Local`
-2. **连接池配置要合理** - 根据数据库承受能力配置
-3. **事务要尽快提交** - 避免长事务
-4. **使用 context 传递** - 支持超时和取消
-5. **生产环境关闭 SQL 日志** - `GormLogLevel: logger.Silent`
-
-## 🔗 相关模块
-
-- [Trace](trace.md) - 数据库操作追踪
-- [Log](log.md) - 数据库日志记录
-- [Errors](errors.md) - 数据库错误处理
-
-## 📖 推荐阅读
-
-- [GORM 官方文档](https://gorm.io/docs/)
-- [MySQL 连接池最佳实践](https://github.com/go-sql-driver/mysql#important-settings)

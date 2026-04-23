@@ -2,65 +2,92 @@ package v8
 
 import (
 	"context"
-	"github.com/go-redis/redis/v8"
-	"log"
+	"errors"
+	"fmt"
 	"sync"
-	"time"
+	"sync/atomic"
+
+	"github.com/go-redis/redis/v8"
 )
 
-var (
-	// ClusterClient 集群模式客户端
-	clusterClient *redis.ClusterClient
-	// SingleClient 单节点模式客户端
-	singleClient *redis.Client
-	// 初始化保护
-	initOnce sync.Once
-)
-
-// InitRedisCluster 初始化 Redis 集群客户端
-func InitRedisCluster(redisConf *Config) {
-	initOnce.Do(func() {
-		ctx := context.Background()
-		switch redisConf.Mode {
-		case "single":
-			singleClient = redis.NewClient(&redis.Options{
-				Addr:         redisConf.Addresses[0],                             // 集群地址列表
-				Password:     redisConf.Password,                                 // 密码
-				PoolSize:     redisConf.PoolSize,                                 // 连接池大小
-				MinIdleConns: redisConf.MinIdleConns,                             // 最小空闲连接数
-				IdleTimeout:  time.Duration(redisConf.IdleTimeout) * time.Second, // 空闲连接超时
-			})
-			// 测试连接是否成功
-			_, err := singleClient.Ping(ctx).Result()
-			if err != nil {
-				log.Fatalf("Unable to connect to Redis Single Cluster: %v", err)
-			}
-		case "cluster":
-			clusterClient = redis.NewClusterClient(&redis.ClusterOptions{
-				Addrs:        redisConf.Addresses,                                // 集群地址列表
-				Password:     redisConf.Password,                                 // 密码
-				PoolSize:     redisConf.PoolSize,                                 // 连接池大小
-				MinIdleConns: redisConf.MinIdleConns,                             // 最小空闲连接数
-				IdleTimeout:  time.Duration(redisConf.IdleTimeout) * time.Second, // 空闲连接超时
-			})
-			// 测试连接是否成功
-			_, err := clusterClient.Ping(ctx).Result()
-			if err != nil {
-				log.Fatalf("Unable to connect to Redis Cluster: %v", err)
-			}
-		default:
-			log.Fatalf("Unable find redis deploy mode")
-		}
-		log.Println("Connected to Redis Cluster successfully!")
-	})
+// clientHolder lets us store redis.UniversalClient (an interface) in an atomic.Pointer,
+// which requires a concrete pointer type.
+type clientHolder struct {
+	c redis.UniversalClient
 }
 
-func GetRedisClient() redis.UniversalClient {
-	if clusterClient != nil {
-		return clusterClient
+var (
+	globalClient atomic.Pointer[clientHolder] // atomic read; safe for concurrent Init + GetClient
+	initOnce     sync.Once
+)
+
+// Init initializes the global Redis client. Only the first call takes effect.
+// Returns an error so the caller controls failure handling instead of calling log.Fatal.
+func Init(cfg *Config) error {
+	if cfg == nil {
+		return errors.New("redis: config must not be nil")
 	}
-	if singleClient != nil {
-		return singleClient
+
+	var initErr error
+	initOnce.Do(func() {
+		c, err := NewClient(cfg)
+		if err != nil {
+			initErr = fmt.Errorf("redis: init failed: %w", err)
+			return
+		}
+		globalClient.Store(&clientHolder{c: c})
+	})
+	return initErr
+}
+
+// GetClient returns the global client.
+// Panics if Init has not been called — this is a programming error.
+func GetClient() redis.UniversalClient {
+	h := globalClient.Load()
+	if h == nil {
+		panic("redis: not initialized, call Init first")
 	}
-	return nil
+	return h.c
+}
+
+// NewClient creates a Redis client from cfg without touching any global state.
+// Use this when you need multiple independent Redis connections.
+func NewClient(cfg *Config) (redis.UniversalClient, error) {
+	if cfg == nil {
+		return nil, errors.New("redis: config must not be nil")
+	}
+	if len(cfg.Addresses) == 0 {
+		return nil, errors.New("redis: at least one address is required")
+	}
+
+	var client redis.UniversalClient
+
+	switch cfg.Mode {
+	case "single":
+		client = redis.NewClient(&redis.Options{
+			Addr:         cfg.Addresses[0],
+			Password:     cfg.Password,
+			PoolSize:     cfg.PoolSize,
+			MinIdleConns: cfg.MinIdleConns,
+			IdleTimeout:  cfg.IdleTimeout, // already time.Duration; do NOT multiply by time.Second
+		})
+	case "cluster":
+		client = redis.NewClusterClient(&redis.ClusterOptions{
+			Addrs:        cfg.Addresses,
+			Password:     cfg.Password,
+			PoolSize:     cfg.PoolSize,
+			MinIdleConns: cfg.MinIdleConns,
+			IdleTimeout:  cfg.IdleTimeout,
+		})
+	default:
+		return nil, fmt.Errorf("redis: unsupported mode %q (want \"single\" or \"cluster\")", cfg.Mode)
+	}
+
+	ctx := context.Background()
+	if _, err := client.Ping(ctx).Result(); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("redis: ping %v: %w", cfg.Addresses, err)
+	}
+
+	return client, nil
 }
