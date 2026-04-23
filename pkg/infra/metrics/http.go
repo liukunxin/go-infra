@@ -1,58 +1,69 @@
 package metrics
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"log"
-	"time"
 )
-
-// ------------------ 全局指标 ------------------
 
 var (
-	meter         metric.Meter
-	HttpRequests  metric.Int64Counter
-	HttpLatencyMs metric.Float64Histogram
+	meter              metric.Meter
+	HttpRequests       metric.Int64Counter
+	HttpDurationSeconds metric.Float64Histogram
 )
 
-// 默认自带的http指标
-func initHTTPMetrics() {
+func initHTTPMetrics() error {
 	meter = otel.Meter("http-server")
 
 	var err error
 
 	HttpRequests, err = meter.Int64Counter(
 		"http_requests_total",
+		metric.WithDescription("Total number of HTTP requests."),
 	)
 	if err != nil {
-		log.Fatalf("failed to create HttpRequests counter: %v", err)
+		return fmt.Errorf("metrics: create http_requests_total counter: %w", err)
 	}
 
-	HttpLatencyMs, err = meter.Float64Histogram(
-		"http_request_duration_ms",
+	// Unit follows Prometheus convention: base unit (seconds) with no suffix abbreviation.
+	HttpDurationSeconds, err = meter.Float64Histogram(
+		"http_request_duration_seconds",
+		metric.WithDescription("HTTP request latency in seconds."),
+		metric.WithUnit("s"),
 	)
 	if err != nil {
-		log.Fatalf("failed to create HttpLatencyMs histogram: %v", err)
+		return fmt.Errorf("metrics: create http_request_duration_seconds histogram: %w", err)
 	}
+
+	return nil
 }
 
 func ginMetricsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
-		duration := time.Since(start).Milliseconds()
+
+		duration := time.Since(start).Seconds()
 		ctx := c.Request.Context()
+
+		path := c.FullPath()
+		if path == "" {
+			// Unregistered routes (e.g. 404). Use a fixed label to avoid unbounded cardinality
+			// from arbitrary user-supplied paths.
+			path = "unknown"
+		}
 
 		attrs := []attribute.KeyValue{
 			attribute.String("method", c.Request.Method),
-			attribute.String("path", c.FullPath()),
+			attribute.String("path", path),
 			attribute.Int("status", c.Writer.Status()),
 		}
 
-		// 使用 metric.WithAttributes 包装
 		HttpRequests.Add(ctx, 1, metric.WithAttributes(attrs...))
-		HttpLatencyMs.Record(ctx, float64(duration), metric.WithAttributes(attrs...))
+		HttpDurationSeconds.Record(ctx, duration, metric.WithAttributes(attrs...))
 	}
 }

@@ -9,15 +9,18 @@ import (
 	"time"
 )
 
-// Config 定义 HTTP 客户端连接池与超时参数。
-// 所有字段均有合理默认值，零值时由 normalized() 填充。
+const defaultMaxResponseBodyBytes = 32 << 20 // 32 MB
+
+// Config defines connection-pool and timeout parameters for the HTTP client.
+// All fields have sensible defaults; zero values are filled in by normalized().
 type Config struct {
-	Timeout             time.Duration `yaml:"timeout"                json:"timeout"`                  // 请求超时，默认 30s
-	MaxIdleConns        int           `yaml:"max_idle_conns"         json:"max_idle_conns"`           // 最大空闲连接总数，默认 100
-	MaxIdleConnsPerHost int           `yaml:"max_idle_conns_per_host" json:"max_idle_conns_per_host"` // 每 host 最大空闲连接，默认 10
-	MaxConnsPerHost     int           `yaml:"max_conns_per_host"     json:"max_conns_per_host"`       // 每 host 最大连接数，0 表示不限
-	IdleConnTimeout     time.Duration `yaml:"idle_conn_timeout"      json:"idle_conn_timeout"`        // 空闲连接回收时间，默认 90s
-	TLSHandshakeTimeout time.Duration `yaml:"tls_handshake_timeout"  json:"tls_handshake_timeout"`    // TLS 握手超时，默认 10s
+	Timeout             time.Duration `yaml:"timeout"                  json:"timeout"`                   // request timeout, default 30s
+	MaxIdleConns        int           `yaml:"max_idle_conns"           json:"max_idle_conns"`            // total max idle connections, default 100
+	MaxIdleConnsPerHost int           `yaml:"max_idle_conns_per_host"  json:"max_idle_conns_per_host"`  // per-host max idle connections, default 10
+	MaxConnsPerHost     int           `yaml:"max_conns_per_host"       json:"max_conns_per_host"`       // per-host max connections, 0 = unlimited
+	IdleConnTimeout     time.Duration `yaml:"idle_conn_timeout"        json:"idle_conn_timeout"`        // idle connection reclaim timeout, default 90s
+	TLSHandshakeTimeout time.Duration `yaml:"tls_handshake_timeout"    json:"tls_handshake_timeout"`   // TLS handshake timeout, default 10s
+	MaxResponseBodyBytes int64        `yaml:"max_response_body_bytes"  json:"max_response_body_bytes"` // response body read limit, default 32 MB; 0 = use default
 }
 
 func (c Config) normalized() Config {
@@ -36,15 +39,20 @@ func (c Config) normalized() Config {
 	if c.TLSHandshakeTimeout <= 0 {
 		c.TLSHandshakeTimeout = 10 * time.Second
 	}
+	if c.MaxResponseBodyBytes <= 0 {
+		c.MaxResponseBodyBytes = defaultMaxResponseBodyBytes
+	}
 	return c
 }
 
-// Client 是带连接池的 HTTP 客户端封装。
+// Client is an HTTP client with a shared connection pool.
 type Client struct {
-	httpClient *http.Client
+	httpClient           *http.Client
+	maxResponseBodyBytes int64
 }
 
-// NewClient 创建带连接池的 HTTP 客户端，Config 零值字段使用内置默认值。
+// NewClient creates an HTTP client with a connection pool. Zero-value Config fields
+// use built-in defaults.
 func NewClient(cfg Config) *Client {
 	cfg = cfg.normalized()
 
@@ -65,10 +73,12 @@ func NewClient(cfg Config) *Client {
 			Timeout:   cfg.Timeout,
 			Transport: transport,
 		},
+		maxResponseBodyBytes: cfg.MaxResponseBodyBytes,
 	}
 }
 
-// HTTPClient 返回底层 *http.Client，便于注入依赖原生客户端的模块（如 pkg/pay）。
+// HTTPClient returns the underlying *http.Client, useful for injecting into
+// third-party modules that require a raw client (e.g. pkg/pay).
 func (c *Client) HTTPClient() *http.Client {
 	if c == nil {
 		return nil
@@ -76,42 +86,77 @@ func (c *Client) HTTPClient() *http.Client {
 	return c.httpClient
 }
 
-// Get 发送 GET 请求，ctx 用于超时与取消控制。
-// 响应体最多读取 32 MB，超出部分被截断。
+// Get sends a GET request. ctx controls timeout and cancellation.
 func (c *Client) Get(ctx context.Context, url string, headers map[string]string) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, 0, err
 	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
+	setHeaders(req, headers)
 	return c.do(req)
 }
 
-// Post 发送 POST 请求，ctx 用于超时与取消控制。
-// 响应体最多读取 32 MB，超出部分被截断。
+// Post sends a POST request. ctx controls timeout and cancellation.
 func (c *Client) Post(ctx context.Context, url string, body []byte, headers map[string]string) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, 0, err
 	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
+	setHeaders(req, headers)
 	return c.do(req)
 }
 
-// do 执行请求并读取响应体（上限 32 MB）。
+// Put sends a PUT request. ctx controls timeout and cancellation.
+func (c *Client) Put(ctx context.Context, url string, body []byte, headers map[string]string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, 0, err
+	}
+	setHeaders(req, headers)
+	return c.do(req)
+}
+
+// Patch sends a PATCH request. ctx controls timeout and cancellation.
+func (c *Client) Patch(ctx context.Context, url string, body []byte, headers map[string]string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, 0, err
+	}
+	setHeaders(req, headers)
+	return c.do(req)
+}
+
+// Delete sends a DELETE request. ctx controls timeout and cancellation.
+func (c *Client) Delete(ctx context.Context, url string, headers map[string]string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	setHeaders(req, headers)
+	return c.do(req)
+}
+
+// Do executes an arbitrary *http.Request, reading the response body up to the
+// configured limit. The caller is responsible for setting ctx on the request.
+func (c *Client) Do(req *http.Request) ([]byte, int, error) {
+	return c.do(req)
+}
+
 func (c *Client) do(req *http.Request) ([]byte, int, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, c.maxResponseBodyBytes))
 	if err != nil {
-		return nil, 0, err
+		return nil, resp.StatusCode, err
 	}
 	return respBody, resp.StatusCode, nil
+}
+
+func setHeaders(req *http.Request, headers map[string]string) {
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 }

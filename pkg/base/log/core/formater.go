@@ -1,48 +1,62 @@
 package core
 
 import (
-	"encoding/json"
+	"bytes"
 	"fmt"
 	"time"
+
+	"github.com/bytedance/sonic"
 )
 
-// Formatter 接口
+// Formatter serializes a log entry into a byte slice ready for output.
+// ts is the time the Log() call was made (not the time of formatting).
 type Formatter interface {
-	Format(level int, msg string, fields map[string]interface{}, traceId, spanId string) []byte
+	Format(level int, ts time.Time, msg string, fields map[string]interface{}, traceId, spanId string) []byte
 }
 
-// TxtLineFormatter 文本格式
+// TxtLineFormatter produces human-readable single-line text output.
 type TxtLineFormatter struct{}
 
-func (f *TxtLineFormatter) Format(level int, msg string, fields map[string]interface{}, traceId, spanId string) []byte {
-	line := fmt.Sprintf("%s [%s] %s", time.Now().Format(time.RFC3339Nano), LevelToString(level), msg)
-	if traceId != "" && spanId != "" {
-		line += fmt.Sprintf(" traceId=%s spanId=%s", traceId, spanId)
+func (f *TxtLineFormatter) Format(level int, ts time.Time, msg string, fields map[string]interface{}, traceId, spanId string) []byte {
+	var b bytes.Buffer
+	b.WriteString(ts.Format(time.RFC3339Nano))
+	b.WriteString(" [")
+	b.WriteString(LevelToString(level))
+	b.WriteString("] ")
+	b.WriteString(msg)
+	if traceId != "" {
+		b.WriteString(" traceId=")
+		b.WriteString(traceId)
+	}
+	if spanId != "" {
+		b.WriteString(" spanId=")
+		b.WriteString(spanId)
 	}
 	for k, v := range fields {
-		line += fmt.Sprintf(" %s=%v", k, v)
+		fmt.Fprintf(&b, " %s=%v", k, v)
 	}
-	line += "\n"
-	return []byte(line)
+	b.WriteByte('\n')
+	return b.Bytes()
 }
 
-// JSONFormatter JSON 格式
+// JSONFormatter produces structured JSON output, one object per line.
+// It uses sonic instead of encoding/json to reduce reflection overhead.
 type JSONFormatter struct{}
 
-func (f *JSONFormatter) Format(level int, msg string, fields map[string]interface{}, traceId, spanId string) []byte {
-	data := map[string]interface{}{
-		"ts":    time.Now().Format(time.RFC3339Nano),
-		"level": LevelToString(level),
-		"msg":   msg,
-	}
-	if traceId != "" && spanId != "" {
+func (f *JSONFormatter) Format(level int, ts time.Time, msg string, fields map[string]interface{}, traceId, spanId string) []byte {
+	data := make(map[string]interface{}, 4+len(fields))
+	data["ts"] = ts.Format(time.RFC3339Nano)
+	data["level"] = LevelToString(level)
+	data["msg"] = msg
+	if traceId != "" {
 		data["traceId"] = traceId
+	}
+	if spanId != "" {
 		data["spanId"] = spanId
 	}
 	for k, v := range fields {
 		data[k] = v
 	}
-	b, _ := json.Marshal(data)
-	b = append(b, '\n')
-	return b
+	b, _ := sonic.Marshal(data)
+	return append(b, '\n')
 }

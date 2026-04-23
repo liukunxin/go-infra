@@ -4,26 +4,48 @@ import (
 	"errors"
 )
 
-// BizError 业务错误：描述用户侧可读的操作失败原因。
-// Controller 层识别该类型后以 HTTP 200 + 非零业务码返回，
-// 而非 HTTP 500，确保前端能展示具体提示而非"系统异常"。
+// BizError describes a user-facing operation failure.
+// Controller layer recognises this type and responds with HTTP 200 + non-zero business code,
+// rather than HTTP 500, so the frontend can display a meaningful message.
+//
+// Use NewBiz for generic business errors, NewBizWithCode when the caller needs to
+// distinguish error types programmatically (e.g. "insufficient balance" vs "user not found").
 type BizError struct {
-	msg string
+	code Code
+	msg  string
 }
 
 func (e *BizError) Error() string { return e.msg }
 
-// NewBiz 创建业务错误
+// BizCode returns the business code embedded in the error, or CodeUnknown if none was set.
+func (e *BizError) BizCode() Code { return e.code }
+
+// NewBiz creates a business error without a specific code.
 func NewBiz(msg string) error {
 	return &BizError{msg: msg}
 }
 
-// IsBiz 判断 err 是否为业务错误
+// NewBizWithCode creates a business error with a specific business code,
+// allowing callers to differentiate error categories via AsCode / errors.As.
+func NewBizWithCode(code Code, msg string) error {
+	return &BizError{code: code, msg: msg}
+}
+
+// IsBiz reports whether err is (or wraps) a BizError.
 func IsBiz(err error) bool {
 	if err == nil {
 		return false
 	}
 	var bizError *BizError
-	ok := errors.As(err, &bizError)
-	return ok
+	return errors.As(err, &bizError)
+}
+
+// AsBizCode extracts the BizCode from a BizError in the chain.
+// Returns CodeUnknown if err is not a BizError.
+func AsBizCode(err error) Code {
+	var e *BizError
+	if errors.As(err, &e) {
+		return e.BizCode()
+	}
+	return CodeUnknown
 }

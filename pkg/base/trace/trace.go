@@ -3,10 +3,10 @@ package trace
 import (
 	"context"
 	"fmt"
-	"github.com/liukunxin/go-infra/pkg/base/env"
 	"log"
 	"sync/atomic"
 
+	"github.com/liukunxin/go-infra/pkg/base/env"
 	"go.opentelemetry.io/contrib/propagators/b3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -16,21 +16,21 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
-var (
-	globalTracerProvider atomic.Pointer[trace.TracerProvider]
-)
+var globalTracerProvider atomic.Pointer[trace.TracerProvider]
 
-func Init(opts ...Option) {
+// Init initializes the global TracerProvider and text-map propagator.
+// Returns an error if the configuration is invalid (e.g. missing service name).
+func Init(opts ...Option) error {
 	tp, err := newTracerProvider(opts...)
 	if err != nil {
-		log.Fatal(err.Error())
+		return err
 	}
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(
 		propagation.NewCompositeTextMapPropagator(b3.New()),
 	)
-
 	globalTracerProvider.Store(tp)
+	return nil
 }
 
 func newTracerProvider(opts ...Option) (*trace.TracerProvider, error) {
@@ -83,12 +83,29 @@ func newTracerProvider(opts ...Option) (*trace.TracerProvider, error) {
 	return tracerProvider, nil
 }
 
+// Shutdown flushes all pending spans, closes the exporter connection, and stops
+// the TracerProvider. Call this on program exit with a deadline context:
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+//	defer cancel()
+//	_ = trace.Shutdown(ctx)
+func Shutdown(ctx context.Context) error {
+	tp := globalTracerProvider.Load()
+	if tp == nil {
+		return nil
+	}
+	return tp.Shutdown(ctx)
+}
+
+// Flush forces an immediate export of all buffered spans without closing the provider.
+// Prefer Shutdown for graceful termination; use Flush only when you need to ensure
+// spans are exported while the provider remains active.
 func Flush() {
-	tracerProvider := globalTracerProvider.Load()
-	if tracerProvider == nil {
+	tp := globalTracerProvider.Load()
+	if tp == nil {
 		return
 	}
-	if err := tracerProvider.ForceFlush(context.Background()); err != nil {
-		log.Fatal(err.Error())
+	if err := tp.ForceFlush(context.Background()); err != nil {
+		log.Printf("trace: force flush error: %v", err)
 	}
 }

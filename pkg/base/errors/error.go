@@ -1,9 +1,9 @@
 package errors
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // ---------------------------
@@ -45,16 +45,17 @@ func (e *Error) Unwrap() error {
 	return e.error
 }
 
-// WarpError 对外包装
-func WarpError(status Status, code Code, err error) error {
+// WrapError wraps an error with an HTTP status and business code.
+// Returns nil if err is nil.
+func WrapError(status Status, code Code, err error) error {
 	if err == nil {
 		return nil
 	}
 	return newError(status, code, err)
 }
 
-// FromError try to convert an error to *Error.
-// It supports wrapped errors.
+// FromError tries to convert an error to *Error.
+// It supports wrapped errors. Unknown errors are mapped to 500 / CodeInternalCallFailed.
 func FromError(err error) *Error {
 	if err == nil {
 		return nil
@@ -65,7 +66,8 @@ func FromError(err error) *Error {
 	return newError(StatusInternalServerError, CodeInternalCallFailed, err)
 }
 
-// AsCode  解析error code
+// AsCode extracts the business Code from an error chain.
+// Returns CodeUnknown if no *Error is found.
 func AsCode(err error) Code {
 	var e *Error
 	if errors.As(err, &e) {
@@ -74,34 +76,37 @@ func AsCode(err error) Code {
 	return CodeUnknown
 }
 
-// ErrorResponse 错误响应结构
+// ErrorResponse is the JSON payload returned to callers on error.
 type ErrorResponse struct {
 	Status  Status `json:"-"`
 	Code    int    `json:"code"`
 	Message string `json:"msg"`
 }
 
-// UnWarpErrorResponse 从 error 构造响应
-func UnWarpErrorResponse(err error) *ErrorResponse {
+// UnwrapErrorResponse builds an ErrorResponse from an error.
+// It maps context.Canceled to CodeUserContextCanceled regardless of wrapping depth.
+func UnwrapErrorResponse(err error) *ErrorResponse {
 	if err == nil {
 		err = fmt.Errorf("unknown error")
 	}
-	er := &ErrorResponse{Status: StatusInternalServerError, Code: int(CodeInternalCallFailed), Message: err.Error()}
+
+	er := &ErrorResponse{
+		Status:  StatusInternalServerError,
+		Code:    int(CodeInternalCallFailed),
+		Message: err.Error(),
+	}
+
 	var e *Error
 	if errors.As(err, &e) {
-		er = &ErrorResponse{
-			Status:  e.Status,
-			Code:    int(e.Code),
-			Message: e.Error(),
-		}
-		// 优先返回错误信息，没有才返回code的信息
-		if len(err.Error()) != 0 {
-			er.Message = err.Error()
-		}
+		er.Status = e.Status
+		er.Code = int(e.Code)
+		er.Message = err.Error() // use full chain so outer context is preserved
 	}
-	// 如果是内部逻辑错误50005且为用户主动取消产生的，归为预期内错误
-	if er.Code == int(CodeInternalCallFailed) && strings.Contains(er.Message, "context canceled") {
+
+	// Reclassify context cancellation regardless of how deeply it is wrapped.
+	if er.Code == int(CodeInternalCallFailed) && errors.Is(err, context.Canceled) {
 		er.Code = int(CodeUserContextCanceled)
 	}
+
 	return er
 }

@@ -21,9 +21,11 @@ func WithReader(reader sdkmetric.Reader) Option {
 	})
 }
 
+// WithAttributes appends resource attributes to the MeterProvider.
+// Multiple calls accumulate; later calls do not overwrite earlier ones.
 func WithAttributes(attributes ...attribute.KeyValue) Option {
 	return option.Func[optionConfig](func(oc *optionConfig) error {
-		oc.attributes = attributes
+		oc.attributes = append(oc.attributes, attributes...)
 		return nil
 	})
 }

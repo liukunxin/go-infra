@@ -1,9 +1,6 @@
 package traffic
 
-import (
-	"context"
-	"sync/atomic"
-)
+import "sync/atomic"
 
 const (
 	TrafficTypeInbound TrafficType = iota + 1
@@ -52,7 +49,7 @@ func init() {
 	globalController.Store(&controller)
 }
 
-func Init(ctx context.Context, opts ...Option) error {
+func Init(opts ...Option) error {
 	c := &optionConfig{}
 
 	for _, opt := range opts {
