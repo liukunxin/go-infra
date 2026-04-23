@@ -15,7 +15,13 @@ var (
 	ErrMismatch = errors.New("code: mismatch")
 )
 
-// CodeStore 验证码存储接口，可自定义实现（Redis、内存、DB 均可）。
+// CodeStore 验证码存储接口。
+//
+// SDK 内置两种实现，按部署规模选择：
+//   - NewMemoryStore / NewMemoryStoreWithCleanup：单进程、低量级场景，无额外依赖。
+//   - NewRedisStore：多实例或量级较大场景，需要 Redis。
+//
+// 如有特殊需求（如自定义 KV 存储），实现此接口即可，无需改动上层逻辑。
 type CodeStore interface {
 	// Save 将 code 以 key 为键存入，有效期为 ttl。
 	Save(ctx context.Context, key, code string, ttl time.Duration) error
