@@ -24,6 +24,7 @@
 |------|------|------|------|
 | **base** | **log** | 高性能异步日志（支持链路追踪） | [查看文档](pkg/base/log/README.md) |
 | **base** | **trace** | 分布式链路追踪（OpenTelemetry） | [查看文档](pkg/base/trace/README.md) |
+| **base** | **config** | 通用配置加载（YAML + 环境覆盖） | [查看文档](pkg/base/config/README.md) |
 | **base** | **errors** | 统一错误处理和 HTTP 状态码封装 | [查看文档](pkg/base/errors/README.md) |
 | **base** | **env** | 环境变量与模式管理 | `pkg/base/env/` |
 | **base** | **uuid** | Snowflake / UUID ID 生成 | `pkg/base/uuid/` |
