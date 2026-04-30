@@ -110,6 +110,27 @@ app_name: demo
 	}
 }
 
+func TestLoadFallbackToLegacyInfraConfigDir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Chdir(tmp)
+
+	legacyDir := filepath.Join(tmp, "infra", "config")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatalf("mkdir legacy dir failed: %v", err)
+	}
+	writeTestFile(t, filepath.Join(legacyDir, "config.yml"), `
+app_name: legacy-demo
+`)
+
+	cfg, err := Load[testAppConfig](WithEnv(EnvLocal))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AppName != "legacy-demo" {
+		t.Fatalf("AppName = %q, want %q", cfg.AppName, "legacy-demo")
+	}
+}
+
 func writeTestFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)), 0o600); err != nil {

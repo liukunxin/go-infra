@@ -12,6 +12,7 @@ type optionConfig struct {
 	env            string
 	envKey         string
 	baseDir        string
+	baseDirSet     bool
 	fileName       string
 	fileExt        string
 	requireEnvFile bool
@@ -22,7 +23,7 @@ type optionConfig struct {
 func defaultOptionConfig() *optionConfig {
 	return &optionConfig{
 		envKey:         consts.Env,
-		baseDir:        "infra/config",
+		baseDir:        "configs",
 		fileName:       "config",
 		fileExt:        ".yml",
 		requireEnvFile: false,
@@ -50,7 +51,7 @@ func WithEnvFrom(envKey string) Option {
 	})
 }
 
-// WithBaseDir 设置配置目录，默认 infra/config。
+// WithBaseDir 设置配置目录，默认 configs。
 func WithBaseDir(dir string) Option {
 	return option.Func[optionConfig](func(c *optionConfig) error {
 		dir = strings.TrimSpace(dir)
@@ -58,6 +59,7 @@ func WithBaseDir(dir string) Option {
 			return fmt.Errorf("config: base dir cannot be empty")
 		}
 		c.baseDir = dir
+		c.baseDirSet = true
 		return nil
 	})
 }

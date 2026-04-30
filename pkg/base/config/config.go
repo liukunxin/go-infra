@@ -31,6 +31,7 @@ func Load[T any](opts ...Option) (*T, error) {
 			return nil, err
 		}
 	}
+	baseDir := c.resolveBaseDir()
 
 	resolvedEnv, err := normalizeEnv(c.resolveEnv())
 	if err != nil {
@@ -38,12 +39,12 @@ func Load[T any](opts ...Option) (*T, error) {
 	}
 
 	var out T
-	basePath := filepath.Join(c.baseDir, c.fileName+c.fileExt)
+	basePath := filepath.Join(baseDir, c.fileName+c.fileExt)
 	if err := decodeYAMLFile(basePath, &out, true); err != nil {
 		return nil, err
 	}
 
-	envPath := filepath.Join(c.baseDir, fmt.Sprintf("%s.%s%s", c.fileName, resolvedEnv, c.fileExt))
+	envPath := filepath.Join(baseDir, fmt.Sprintf("%s.%s%s", c.fileName, resolvedEnv, c.fileExt))
 	if err := decodeYAMLFile(envPath, &out, c.requireEnvFile); err != nil {
 		return nil, err
 	}
@@ -122,4 +123,25 @@ func (c *optionConfig) resolveEnv() string {
 		}
 	}
 	return env.GetEnv()
+}
+
+func (c *optionConfig) resolveBaseDir() string {
+	// 显式传入 WithBaseDir 时，严格使用调用方目录，不做回退。
+	if c.baseDirSet {
+		return c.baseDir
+	}
+	if isExistingDir(c.baseDir) {
+		return c.baseDir
+	}
+	// 兼容历史目录结构，避免老项目升级时直接启动失败。
+	legacy := "infra/config"
+	if isExistingDir(legacy) {
+		return legacy
+	}
+	return c.baseDir
+}
+
+func isExistingDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }

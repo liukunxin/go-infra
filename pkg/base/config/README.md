@@ -28,7 +28,7 @@ type App struct {
 func main() {
 	cfg, err := kconfig.Load[App](
 		kconfig.WithEnvFrom("env"),
-		kconfig.WithBaseDir("infra/config"),
+		kconfig.WithBaseDir("configs"),
 		kconfig.WithValidate(true),
 		kconfig.WithTagValidation(true),
 	)
@@ -46,3 +46,8 @@ func main() {
 - `test` / `testing` -> `config.test.yml`
 - `gray` / `staging` -> `config.gray.yml`
 - `prod` / `production` / `release` -> `config.prod.yml`
+
+## 默认目录与兼容策略
+
+- 默认读取目录：`configs`
+- 如未显式设置 `WithBaseDir(...)` 且 `configs` 不存在，会自动回退到历史目录 `infra/config`
