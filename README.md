@@ -16,6 +16,7 @@
 - 🛡️ **生产就绪** - 经过性能优化和并发安全验证
 - 📦 **开箱即用** - 提供合理的默认配置
 - 🔧 **灵活配置** - 支持自定义配置，满足不同场景需求
+- 🤖 **AI 统一接入** - 提供 LLM 多厂商统一调用与主备切换能力
 - 📝 **详细文档** - 每个模块都有完整的使用示例
 
 ## 📦 功能模块
@@ -35,6 +36,7 @@
 | **infra** | **metrics** | Prometheus 监控指标采集 | [查看文档](pkg/infra/metrics/README.md) |
 | **infra** | **traffic** | 流量控制（限流/熔断接口） | [查看文档](pkg/infra/traffic/README.md) |
 | **infra** | **http_client** | HTTP 客户端（连接池复用） | [查看文档](pkg/infra/http_client/README.md) |
+| **infra** | **llm** | 大模型统一调用 SDK（多厂商协议抽象） | [查看文档](pkg/infra/llm/README.md) |
 | **infra** | **apollo** | Apollo 配置中心 | `pkg/infra/apollo/` |
 | **infra** | **ks3** | KS3 对象存储 | `pkg/infra/ks3/` |
 | **biz** | **login** | 多方式登录（密码/手机/邮箱/微信）+ JWT | [查看文档](pkg/biz/login/README.md) |
@@ -112,6 +114,7 @@ func main() {
 - [监控指标 (metrics)](pkg/infra/metrics/README.md) - Prometheus 指标采集
 - [HTTP 客户端](pkg/infra/http_client/README.md) - 带连接池的 HTTP 客户端
 - [流量控制 (traffic)](pkg/infra/traffic/README.md) - 限流/熔断接口
+- [LLM SDK](pkg/infra/llm/README.md) - 大模型统一调用（支持 OpenAI 兼容协议）
 
 ### pkg/biz — 业务基础能力
 
