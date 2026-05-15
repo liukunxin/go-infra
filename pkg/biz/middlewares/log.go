@@ -6,7 +6,6 @@ import (
 	"github.com/liukunxin/go-infra/internal/consts"
 	"github.com/liukunxin/go-infra/pkg/base/log"
 	"github.com/spf13/cast"
-	"net/http"
 	"time"
 )
 
@@ -32,7 +31,7 @@ func HttpLogRecord() gin.HandlerFunc {
 			respCode = -1
 		}
 		respMsg := c.GetString(consts.ResponseMsg)
-		
+
 		// 封装主要信息
 		logMessage := fmt.Sprintf("[%s_%s]%s | %d | %d | %v | %s",
 			method,
@@ -55,8 +54,11 @@ func HttpLogRecord() gin.HandlerFunc {
 				"user_agent": userAgent,
 				"body_size":  bodySize,
 			})
-		if statusCode != http.StatusOK {
+		sc := statusCode / 100
+		if sc == 5 {
 			lg.Error(logMessage)
+		} else if sc == 4 {
+			lg.Warn(logMessage)
 		} else {
 			lg.Info(logMessage)
 		}
