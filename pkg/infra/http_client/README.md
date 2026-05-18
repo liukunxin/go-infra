@@ -53,6 +53,27 @@ shared := http_client.NewClient(http_client.Config{Timeout: 30 * time.Second})
 
 详见 [Pay 文档 - 可选注入 *http.Client](pay.md#可选注入-httpclient)。
 
+### 共用连接池但使用不同超时（如 SSE / WebSocket）
+
+全局 Client 携带固定的请求超时（`Config.Timeout`），长连接场景需要 `Timeout: 0`。
+通过 `Transport()` / `GetTransport()` 取出连接池，自行组装 `*http.Client`：
+
+```go
+// 初始化阶段（进程启动时）
+http_client.Init(http_client.Config{Timeout: 30 * time.Second})
+
+// 使用阶段（可在任意位置调用）
+transport := http_client.GetTransport()   // nil-safe，不 panic
+if transport == nil {
+    transport = &http.Transport{...}      // 未初始化时的 fallback
+}
+
+shortCl := &http.Client{Transport: transport, Timeout: 10 * time.Second}
+streamCl := &http.Client{Transport: transport, Timeout: 0}  // SSE / 流式长连接
+```
+
+两个客户端共享同一套 TCP 连接池（`http.Transport`），仅 timeout 策略不同。
+
 ## 配置说明
 
 | 字段 | 说明 |
@@ -67,10 +88,12 @@ shared := http_client.NewClient(http_client.Config{Timeout: 30 * time.Second})
 ## API 摘要
 
 - `NewClient(cfg Config) *Client`：创建独立客户端实例。
-- `Init(cfg)` / `GetHttpClient() *Client`：单例模式（未 `Init` 时 `GetHttpClient` 会 `log.Fatal`）。
+- `Init(cfg)` / `GetHttpClient() *Client`：单例模式（未 `Init` 时 `GetHttpClient` 会 panic）。
+- `GetTransport() http.RoundTripper`：nil-safe 取出共享连接池，未初始化时返回 nil。
 - `(*Client) Get(url, headers) ([]byte, int, error)`
 - `(*Client) Post(url, body, headers) ([]byte, int, error)`
 - `(*Client) HTTPClient() *http.Client`：返回底层客户端，供需标准 `*http.Client` 的库注入使用。
+- `(*Client) Transport() http.RoundTripper`：返回底层连接池，供需自定义 timeout 的长连接场景使用。
 
 ## 相关代码
 

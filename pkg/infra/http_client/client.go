@@ -86,6 +86,25 @@ func (c *Client) HTTPClient() *http.Client {
 	return c.httpClient
 }
 
+// Transport returns the underlying http.RoundTripper (connection pool).
+// This is useful when a caller needs to share the connection pool but apply a
+// different timeout policy — for example, a long-lived SSE or WebSocket
+// connection that cannot use the global Timeout set on the Client.
+//
+//	base := http_client.GetHTTPClient()          // or NewClient(cfg)
+//	streamCl := &http.Client{
+//	    Transport: base.Transport(),             // shared pool
+//	    Timeout:   0,                            // no deadline for streaming
+//	}
+//
+// Returns nil if the receiver is nil.
+func (c *Client) Transport() http.RoundTripper {
+	if c == nil {
+		return nil
+	}
+	return c.httpClient.Transport
+}
+
 // Get sends a GET request. ctx controls timeout and cancellation.
 func (c *Client) Get(ctx context.Context, url string, headers map[string]string) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
