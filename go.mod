@@ -5,6 +5,7 @@ go 1.23.8
 require (
 	github.com/apolloconfig/agollo/v4 v4.4.0
 	github.com/bwmarrin/snowflake v0.3.0
+	github.com/coder/websocket v1.8.14
 	github.com/gabriel-vasile/mimetype v1.4.8
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-redis/redis/v8 v8.11.5
@@ -23,6 +24,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.38.0
 	go.opentelemetry.io/otel/trace v1.38.0
 	golang.org/x/crypto v0.40.0
+	google.golang.org/grpc v1.74.2
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.31.0
 )
@@ -108,7 +110,6 @@ require (
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.34.0 // indirect
 	google.golang.org/genproto v0.0.0-20220503193339-ba3ae3f07e29 // indirect
-	google.golang.org/grpc v1.48.0 // indirect
 	google.golang.org/protobuf v1.36.9 // indirect
 	gopkg.in/ini.v1 v1.62.0 // indirect
 	gopkg.in/lumberjack.v2 v2.0.0 // indirect

@@ -36,6 +36,8 @@
 | **infra** | **metrics** | Prometheus 监控指标采集 | [查看文档](pkg/infra/metrics/README.md) |
 | **infra** | **traffic** | 流量控制（限流/熔断接口） | [查看文档](pkg/infra/traffic/README.md) |
 | **infra** | **http_client** | HTTP 客户端（连接池复用） | [查看文档](pkg/infra/http_client/README.md) |
+| **infra** | **grpc** | gRPC 客户端/服务端统一封装（拦截器/治理） | [查看文档](pkg/infra/grpc/README.md) |
+| **infra** | **websocket** | WebSocket 长连接封装（心跳/重连/Hub） | [查看文档](pkg/infra/websocket/README.md) |
 | **infra** | **llm** | 大模型统一调用 SDK（多厂商协议抽象） | [查看文档](pkg/infra/llm/README.md) |
 | **infra** | **apollo** | Apollo 配置中心 | `pkg/infra/apollo/` |
 | **infra** | **ks3** | KS3 对象存储 | `pkg/infra/ks3/` |
@@ -113,6 +115,8 @@ func main() {
 - [Milvus](pkg/infra/milvus/README.md) - 向量数据库客户端，连接池管理
 - [监控指标 (metrics)](pkg/infra/metrics/README.md) - Prometheus 指标采集
 - [HTTP 客户端](pkg/infra/http_client/README.md) - 带连接池的 HTTP 客户端
+- [gRPC](pkg/infra/grpc/README.md) - gRPC 客户端/服务端统一封装
+- [WebSocket](pkg/infra/websocket/README.md) - WebSocket 长连接封装
 - [流量控制 (traffic)](pkg/infra/traffic/README.md) - 限流/熔断接口
 - [LLM SDK](pkg/infra/llm/README.md) - 大模型统一调用（支持 OpenAI 兼容协议）
 
