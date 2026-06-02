@@ -63,7 +63,7 @@ func unaryServerInterceptor(cfg ServerConfig) grpc.UnaryServerInterceptor {
 			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			log.WithContext(ctx).Error("grpc unary server failed, method=%s err=%v", info.FullMethod, err)
+			log.WithContext(ctx).Errorf("grpc unary server failed, method=%s err=%v", info.FullMethod, err)
 		} else {
 			span.SetStatus(codes.Ok, "")
 		}
@@ -103,7 +103,7 @@ func unaryClientInterceptor(cfg ClientConfig) grpc.UnaryClientInterceptor {
 			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			log.WithContext(ctx).Error("grpc unary client failed, method=%s err=%v", method, err)
+			log.WithContext(ctx).Errorf("grpc unary client failed, method=%s err=%v", method, err)
 		} else {
 			span.SetStatus(codes.Ok, "")
 		}

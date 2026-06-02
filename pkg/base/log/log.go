@@ -25,11 +25,10 @@ func WithContext(ctx context.Context) *ContextLogger {
 }
 
 // New returns a plain ContextLogger without trace information.
+// It always returns a non-nil logger wrapper; if global logger is not initialized,
+// logging methods become no-op.
 func New() *ContextLogger {
 	l := loadLogger()
-	if l == nil {
-		return nil
-	}
 	return &ContextLogger{l: l}
 }
 
@@ -64,32 +63,55 @@ func (cl *ContextLogger) WithFields(fields map[string]interface{}) *ContextLogge
 	}
 }
 
-func (cl *ContextLogger) Debug(msg string, args ...interface{}) {
-	cl.log(core.LevelDebug, msg, args...)
+func (cl *ContextLogger) Debug(msg string) {
+	cl.logMessage(core.LevelDebug, msg)
 }
-func (cl *ContextLogger) Info(msg string, args ...interface{}) {
-	cl.log(core.LevelInfo, msg, args...)
+func (cl *ContextLogger) Debugf(format string, args ...interface{}) {
+	cl.logFormat(core.LevelDebug, format, args...)
 }
-func (cl *ContextLogger) Warn(msg string, args ...interface{}) {
-	cl.log(core.LevelWarn, msg, args...)
+func (cl *ContextLogger) Info(msg string) {
+	cl.logMessage(core.LevelInfo, msg)
 }
-func (cl *ContextLogger) Error(msg string, args ...interface{}) {
-	cl.log(core.LevelError, msg, args...)
+func (cl *ContextLogger) Infof(format string, args ...interface{}) {
+	cl.logFormat(core.LevelInfo, format, args...)
 }
-func (cl *ContextLogger) Fatal(msg string, args ...interface{}) {
-	cl.log(core.LevelFatal, msg, args...)
+func (cl *ContextLogger) Warn(msg string) {
+	cl.logMessage(core.LevelWarn, msg)
 }
 
-func (cl *ContextLogger) log(level int, format string, args ...interface{}) {
+func (cl *ContextLogger) Warnf(format string, args ...interface{}) {
+	cl.logFormat(core.LevelWarn, format, args...)
+}
+
+func (cl *ContextLogger) Error(msg string) {
+	cl.logMessage(core.LevelError, msg)
+}
+
+func (cl *ContextLogger) Errorf(format string, args ...interface{}) {
+	cl.logFormat(core.LevelError, format, args...)
+}
+
+func (cl *ContextLogger) Fatal(msg string) {
+	cl.logMessage(core.LevelFatal, msg)
+}
+
+func (cl *ContextLogger) Fatalf(format string, args ...interface{}) {
+	cl.logFormat(core.LevelFatal, format, args...)
+}
+
+func (cl *ContextLogger) logMessage(level int, msg string) {
 	if cl.l == nil {
 		return
-	}
-	msg := format
-	if len(args) > 0 {
-		msg = fmt.Sprintf(format, args...)
 	}
 	// extraFields is passed directly to the core logger so the formatter receives them
 	// as proper structured fields — they appear as top-level JSON keys, not baked into msg.
 	// The map is already a copy owned by this ContextLogger, so it is safe to share.
 	cl.l.Log(level, msg, cl.traceId, cl.spanId, cl.extraFields)
+}
+
+func (cl *ContextLogger) logFormat(level int, format string, args ...interface{}) {
+	if cl.l == nil {
+		return
+	}
+	cl.logMessage(level, fmt.Sprintf(format, args...))
 }

@@ -63,7 +63,7 @@ func (p *Pool) Put(milvusClient client.Client) {
 		// 池已满，关闭连接
 		err := milvusClient.Close()
 		if err != nil {
-			log.New().Error("[milvus_err]||err=%s", err.Error())
+			log.New().Errorf("[milvus_err]||err=%s", err.Error())
 		}
 	}
 }
@@ -74,7 +74,7 @@ func (p *Pool) Close() {
 	for milvusClient := range p.clients {
 		err := milvusClient.Close()
 		if err != nil {
-			log.New().Error("[milvus_err]||err=%s", err.Error())
+			log.New().Errorf("[milvus_err]||err=%s", err.Error())
 		}
 	}
 }

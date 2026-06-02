@@ -1,6 +1,6 @@
 module github.com/liukunxin/go-infra
 
-go 1.23.8
+go 1.25
 
 require (
 	github.com/apolloconfig/agollo/v4 v4.4.0
@@ -32,8 +32,6 @@ require (
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bytedance/sonic v1.14.0 // indirect
-	github.com/bytedance/sonic/loader v0.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/cockroachdb/errors v1.9.1 // indirect

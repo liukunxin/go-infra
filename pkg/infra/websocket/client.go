@@ -195,7 +195,7 @@ func (c *Client) write(conn *Conn, msgType cws.MessageType, payload []byte) erro
 	defer cancel()
 	if err := conn.Raw().Write(ctx, msgType, payload); err != nil {
 		recordError(conn.Context(), "client")
-		log.WithContext(conn.Context()).Warn("websocket client write failed, err=%v", err)
+		log.WithContext(conn.Context()).Warnf("websocket client write failed, err=%v", err)
 		return err
 	}
 	return nil

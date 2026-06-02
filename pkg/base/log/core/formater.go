@@ -2,10 +2,9 @@ package core
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"time"
-
-	"github.com/bytedance/sonic"
 )
 
 // Formatter serializes a log entry into a byte slice ready for output.
@@ -40,7 +39,6 @@ func (f *TxtLineFormatter) Format(level int, ts time.Time, msg string, fields ma
 }
 
 // JSONFormatter produces structured JSON output, one object per line.
-// It uses sonic instead of encoding/json to reduce reflection overhead.
 type JSONFormatter struct{}
 
 func (f *JSONFormatter) Format(level int, ts time.Time, msg string, fields map[string]interface{}, traceId, spanId string) []byte {
@@ -57,6 +55,6 @@ func (f *JSONFormatter) Format(level int, ts time.Time, msg string, fields map[s
 	for k, v := range fields {
 		data[k] = v
 	}
-	b, _ := sonic.Marshal(data)
+	b, _ := json.Marshal(data)
 	return append(b, '\n')
 }

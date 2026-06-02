@@ -134,7 +134,7 @@ func (s *Server) write(conn *Conn, msgType cws.MessageType, payload []byte) erro
 	ctx, cancel := context.WithTimeout(conn.Context(), s.cfg.WriteTimeout)
 	defer cancel()
 	if err := conn.Raw().Write(ctx, msgType, payload); err != nil {
-		log.WithContext(conn.Context()).Warn("websocket server write failed, conn=%s err=%v", conn.ID(), err)
+		log.WithContext(conn.Context()).Warnf("websocket server write failed, conn=%s err=%v", conn.ID(), err)
 		return err
 	}
 	return nil
