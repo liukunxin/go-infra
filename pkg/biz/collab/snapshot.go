@@ -39,11 +39,11 @@ func (ss *snapshotStore) load(ctx context.Context, sessionID string) (*Snapshot,
 // save 保存快照。
 func (ss *snapshotStore) save(ctx context.Context, sessionID string, snap *Snapshot) error {
 	key := snapshotKey(ss.ns, sessionID)
-	data, err := json.Marshal(snap)
+	raw, err := json.Marshal(snap)
 	if err != nil {
 		return err
 	}
-	return ss.rdb.Set(ctx, key, data, 0).Err()
+	return ss.rdb.Set(ctx, key, raw, 0).Err()
 }
 
 // buildAsync 异步构建快照（在 goroutine 中调用）。
@@ -56,7 +56,12 @@ func (ss *snapshotStore) buildAsync(el *eventLog, sessionID string, seq int64, b
 			return
 		}
 
-		data := builder(events)
+		data, err := builder(events)
+		if err != nil {
+			log.New().Warnf("collab: snapshot builder error, session=%s err=%v", sessionID, err)
+			return
+		}
+
 		snap := &Snapshot{
 			Seq:     seq,
 			Data:    data,

@@ -13,50 +13,86 @@
 | 自动快照 | 加速回放，业务自定义聚合逻辑 |
 | 实时订阅 | Redis XREAD BLOCK 长轮询驱动回调 |
 
+## 设计理念
+
+SDK 管理 5 个元数据字段（`EventID`/`SessionID`/`Seq`/`Timestamp`/`SenderID`），业务方的所有数据放在 `Body`（`json.RawMessage`）中自行定义结构。引擎对 Body 做**纯透传**——写入时原样存储，回放/订阅时原样返回。
+
+`SenderID` 是多端协作的通用字段，由业务方定义粒度——可以是用户 ID、设备 ID 或连接 ID，SDK 不限制。引擎用它做日志记录，未来可扩展推送过滤（不推给发送者自己）。
+
+这意味着：
+- 不同业务可以定义完全不同的 Body 结构
+- 业务升级 Body 结构不需要改动 SDK 版本
+- SDK 永远不会"多了不需要的字段"或"少了想要的字段"
+
 ## 快速开始
 
 ```go
 import (
+    "encoding/json"
     "github.com/liukunxin/go-infra/pkg/biz/collab"
     redisv8 "github.com/liukunxin/go-infra/pkg/infra/redis/v8"
 )
 
 // 使用 go-infra 全局 Redis 客户端创建引擎
 engine := collab.New(redisv8.GetClient(),
-    collab.WithNamespace("my-biz"),   // 自定义 key 前缀
-    collab.WithSnapEvery(500),        // 每 500 条事件自动快照
-    collab.WithSnapshotBuilder(func(events []collab.Envelope) map[string]any {
-        // 业务自定义：如何将事件列表折叠为快照
-        return map[string]any{"state": "aggregated"}
+    collab.WithNamespace("my-biz"),
+    collab.WithSnapEvery(200),
+    collab.WithSnapshotBuilder(func(events []collab.Envelope) (json.RawMessage, error) {
+        // 业务自定义：解析 Body 并聚合为快照
+        return json.Marshal(map[string]any{"aggregated": true})
     }),
 )
 
 // 1. 创建会话
 sess, err := engine.CreateSession(ctx, "session-uuid-123")
 
-// 2. 写入事件（自动定序、去重、持久化）
+// 2. 构造业务 Body（SDK 不关心内容）
+body, _ := json.Marshal(map[string]any{
+    "event_type": "write",
+    "sender_id":  "mobile-user-1",
+    "payload":    map[string]any{"sheet": "Sheet1", "items": items},
+})
+
+// 3. 写入事件（自动定序、去重、持久化）
 result, err := engine.Append(ctx, collab.Envelope{
     SessionID: sess.ID,
-    EventType: "excel.rows.write",
     SenderID:  "mobile-user-1",
-    Payload:   map[string]any{"rows": data},
+    Body:      body,
 })
 fmt.Println("seq:", result.Seq)
 
-// 3. 订阅实时推送（在 goroutine 中）
+// 4. 订阅实时推送（在 goroutine 中）
 go engine.Subscribe(ctx, sess.ID, func(evt collab.Envelope) {
-    // 推送给其他在线端
-    websocket.Broadcast(evt)
+    fmt.Printf("received: seq=%d body=%s\n", evt.Seq, string(evt.Body))
 })
 
-// 4. 断线重连回放（从 seq=100 之后的增量）
+// 5. 断线重连回放（从 seq=100 之后的增量）
 replay, err := engine.Replay(ctx, sess.ID, 100)
-// replay.Events = seq>100 的事件列表
-// replay.Snapshot = 快照（如果有且有用）
-// replay.LastSeq = 当前最大 seq
 
-// 5. 关闭会话（10 分钟后 Redis 自动清理）
+// 6. 关闭会话（10 分钟后 Redis 自动清理）
 engine.CloseSession(ctx, sess.ID, 10*time.Minute)
+```
+
+## 业务 Body 示例
+
+SDK 不限制 Body 内容，不同业务可以定义完全不同的结构：
+
+**SnapSheet 业务**：
+```json
+{
+  "event_type": "write",
+  "sender_id": "mobile-user-1",
+  "payload": { "sheet": "Sheet1", "items": [...] }
+}
+```
+
+**语音速记业务**：
+```json
+{
+  "event_type": "asr.partial",
+  "sender_id": "pc-mic",
+  "payload": { "text": "今天的会议...", "is_final": false }
+}
 ```
 
 ## 配置项
@@ -94,11 +130,11 @@ engine.CloseSession(ctx, sess.ID, 10*time.Minute)
 
 ### `Engine.Append(ctx, evt) (Envelope, error)`
 
-写入事件。流程：参数校验 → 自动填充（EventID/Timestamp）→ 去重 → 原子定序+持久化 → 异步快照检查。返回的 Envelope 中 `Seq` 已填充。
+写入事件。流程：参数校验 → 自动填充（EventID/Timestamp）→ 去重 → 原子定序+持久化 → 异步快照检查。返回的 Envelope 中 `Seq` 已填充。Body 原样透传存储。
 
 ### `Engine.Replay(ctx, sessionID, fromSeq) (ReplayResult, error)`
 
-回放历史。`fromSeq=0` 全量回放（优先加载快照加速）；`fromSeq>0` 增量回放。
+回放历史。`fromSeq=0` 全量回放（优先加载快照加速）；`fromSeq>0` 增量回放。Body 原样返回。
 
 ### `Engine.Subscribe(ctx, sessionID, handler) error`
 
@@ -120,8 +156,9 @@ engine.CloseSession(ctx, sess.ID, 10*time.Minute)
 
 ## 设计原则
 
-1. **零业务侵入**：引擎不 import 任何业务包，Payload 对引擎透明
-2. **线程安全**：Engine 无内部可变状态，所有状态在 Redis
-3. **集群友好**：hash tag 保证同一 session 的操作在同一 slot
-4. **优雅降级**：SnapshotBuilder 可选，不提供时仅保留事件流
-5. **最小依赖**：只依赖 `go-redis/v8` + 标准库 + `pkg/base/log`
+1. **Body 透传**：SDK 对 `Envelope.Body` 不解析、不校验、不修改，序列化时原样嵌入 JSON
+2. **零业务侵入**：引擎不 import 任何业务包，不知道业务 Body 里有什么
+3. **线程安全**：Engine 无内部可变状态，所有状态在 Redis
+4. **集群友好**：hash tag 保证同一 session 的操作在同一 slot
+5. **向后兼容**：业务升级 Body 结构无需改动 SDK 版本
+6. **最小依赖**：只依赖 `go-redis/v8` + `encoding/json` + 标准库 + `pkg/base/log`

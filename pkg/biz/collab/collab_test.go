@@ -2,6 +2,7 @@ package collab
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +18,15 @@ func setupTestEngine(t *testing.T, opts ...Option) (*Engine, *miniredis.Miniredi
 	t.Cleanup(func() { rdb.Close() })
 	engine := New(rdb, opts...)
 	return engine, mr
+}
+
+func makeBody(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func TestCreateSession(t *testing.T) {
@@ -56,9 +66,8 @@ func TestAppendAndReplay(t *testing.T) {
 	// 写入事件
 	evt1, err := engine.Append(ctx, Envelope{
 		SessionID: "sess-1",
-		EventType: "excel.rows.write",
-		SenderID:  "user-1",
-		Payload:   map[string]any{"row": 1},
+		SenderID:  "mobile-user-1",
+		Body:      makeBody(t, map[string]any{"event_type": "write", "row": 1}),
 	})
 	if err != nil {
 		t.Fatalf("Append failed: %v", err)
@@ -69,12 +78,14 @@ func TestAppendAndReplay(t *testing.T) {
 	if evt1.EventID == "" {
 		t.Error("expected EventID to be auto-generated")
 	}
+	if evt1.SenderID != "mobile-user-1" {
+		t.Errorf("expected SenderID=mobile-user-1, got %s", evt1.SenderID)
+	}
 
 	evt2, err := engine.Append(ctx, Envelope{
 		SessionID: "sess-1",
-		EventType: "excel.rows.write",
-		SenderID:  "user-2",
-		Payload:   map[string]any{"row": 2},
+		SenderID:  "pc-user-2",
+		Body:      makeBody(t, map[string]any{"event_type": "write", "row": 2}),
 	})
 	if err != nil {
 		t.Fatalf("Append failed: %v", err)
@@ -93,6 +104,15 @@ func TestAppendAndReplay(t *testing.T) {
 	}
 	if result.LastSeq != 2 {
 		t.Errorf("expected LastSeq=2, got %d", result.LastSeq)
+	}
+
+	// 验证 Body 透传完整性
+	var body map[string]any
+	if err = json.Unmarshal(result.Events[0].Body, &body); err != nil {
+		t.Fatalf("Body unmarshal failed: %v", err)
+	}
+	if body["event_type"] != "write" {
+		t.Errorf("expected event_type=write, got %v", body["event_type"])
 	}
 
 	// 增量回放（从 seq=1 开始）
@@ -117,8 +137,7 @@ func TestDeduplicate(t *testing.T) {
 	evt := Envelope{
 		EventID:   "fixed-uuid",
 		SessionID: "sess-1",
-		EventType: "test.event",
-		SenderID:  "user-1",
+		Body:      makeBody(t, map[string]any{"event_type": "test"}),
 	}
 
 	_, err := engine.Append(ctx, evt)
@@ -142,8 +161,7 @@ func TestAppendToClosedSession(t *testing.T) {
 
 	_, err := engine.Append(ctx, Envelope{
 		SessionID: "sess-1",
-		EventType: "test.event",
-		SenderID:  "user-1",
+		Body:      makeBody(t, map[string]any{"event_type": "test"}),
 	})
 	if err != ErrSessionClosed {
 		t.Errorf("expected ErrSessionClosed, got %v", err)
@@ -178,8 +196,7 @@ func TestSubscribe(t *testing.T) {
 	// 写入事件
 	engine.Append(ctx, Envelope{
 		SessionID: "sess-1",
-		EventType: "test.push",
-		SenderID:  "user-1",
+		Body:      makeBody(t, map[string]any{"event_type": "push", "msg": "hello"}),
 	})
 
 	// 等待事件投递
@@ -198,12 +215,8 @@ func TestSubscribe(t *testing.T) {
 }
 
 func TestSnapshotBuild(t *testing.T) {
-	builder := func(events []Envelope) map[string]any {
-		count := 0
-		for range events {
-			count++
-		}
-		return map[string]any{"count": count}
+	builder := func(events []Envelope) (json.RawMessage, error) {
+		return json.Marshal(map[string]any{"count": len(events)})
 	}
 
 	engine, _ := setupTestEngine(t,
@@ -217,9 +230,7 @@ func TestSnapshotBuild(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		_, err := engine.Append(ctx, Envelope{
 			SessionID: "sess-1",
-			EventType: "test.event",
-			SenderID:  "user-1",
-			Payload:   map[string]any{"i": i},
+			Body:      makeBody(t, map[string]any{"i": i}),
 		})
 		if err != nil {
 			t.Fatalf("Append #%d failed: %v", i, err)
@@ -240,6 +251,15 @@ func TestSnapshotBuild(t *testing.T) {
 	if result.Snapshot.Seq != 3 {
 		t.Errorf("expected snapshot seq=3, got %d", result.Snapshot.Seq)
 	}
+
+	// 验证快照 Data 内容
+	var snapData map[string]any
+	if err = json.Unmarshal(result.Snapshot.Data, &snapData); err != nil {
+		t.Fatalf("snapshot Data unmarshal failed: %v", err)
+	}
+	if snapData["count"] != float64(3) {
+		t.Errorf("expected snapshot count=3, got %v", snapData["count"])
+	}
 }
 
 func TestCloseSession(t *testing.T) {
@@ -249,8 +269,7 @@ func TestCloseSession(t *testing.T) {
 	engine.CreateSession(ctx, "sess-1")
 	engine.Append(ctx, Envelope{
 		SessionID: "sess-1",
-		EventType: "test.event",
-		SenderID:  "user-1",
+		Body:      makeBody(t, map[string]any{"event_type": "test"}),
 	})
 
 	err := engine.CloseSession(ctx, "sess-1", 5*time.Minute)
@@ -265,5 +284,58 @@ func TestCloseSession(t *testing.T) {
 	result, err := engine.Replay(ctx, "sess-1", 0)
 	if err != ErrSessionNotFound {
 		t.Errorf("expected ErrSessionNotFound after TTL, got err=%v result=%+v", err, result)
+	}
+}
+
+func TestBodyTransparency(t *testing.T) {
+	engine, _ := setupTestEngine(t)
+	ctx := context.Background()
+
+	engine.CreateSession(ctx, "sess-1")
+
+	// 构造一个复杂的业务 Body
+	originalBody := map[string]any{
+		"event_type": "asr.partial",
+		"payload": map[string]any{
+			"text":     "今天的会议内容",
+			"is_final": false,
+			"segments": []any{1, 2, 3},
+		},
+	}
+
+	bodyBytes := makeBody(t, originalBody)
+	appended, err := engine.Append(ctx, Envelope{
+		SessionID: "sess-1",
+		SenderID:  "pc-mic",
+		Body:      bodyBytes,
+	})
+	if err != nil {
+		t.Fatalf("Append failed: %v", err)
+	}
+	if appended.SenderID != "pc-mic" {
+		t.Errorf("expected SenderID=pc-mic, got %s", appended.SenderID)
+	}
+
+	// 回放后验证 Body 完全一致 + SenderID 保留
+	result, err := engine.Replay(ctx, "sess-1", 0)
+	if err != nil {
+		t.Fatalf("Replay failed: %v", err)
+	}
+
+	evt := result.Events[0]
+	if evt.SenderID != "pc-mic" {
+		t.Errorf("replay SenderID mismatch: got %s", evt.SenderID)
+	}
+
+	var recovered map[string]any
+	if err = json.Unmarshal(evt.Body, &recovered); err != nil {
+		t.Fatalf("Body unmarshal failed: %v", err)
+	}
+	if recovered["event_type"] != "asr.partial" {
+		t.Errorf("Body event_type mismatch: %v", recovered["event_type"])
+	}
+	payload := recovered["payload"].(map[string]any)
+	if payload["text"] != "今天的会议内容" {
+		t.Errorf("Body payload.text mismatch: %v", payload["text"])
 	}
 }

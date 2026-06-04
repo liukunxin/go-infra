@@ -85,7 +85,7 @@ func (e *Engine) Append(ctx context.Context, evt Envelope) (Envelope, error) {
 		return Envelope{}, err
 	}
 	if !isNew {
-		log.New().Infof("collab: duplicate event intercepted, event_id=%s session=%s", evt.EventID, evt.SessionID)
+		log.New().Infof("collab: duplicate event intercepted, event_id=%s session=%s sender=%s", evt.EventID, evt.SessionID, evt.SenderID)
 		return Envelope{}, ErrDuplicate
 	}
 

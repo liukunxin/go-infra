@@ -1,10 +1,14 @@
 package collab
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // SnapshotBuilder 快照构建函数，由业务方提供。
-// 引擎不知道如何折叠业务状态，该函数将事件列表聚合为快照数据。
-type SnapshotBuilder func(events []Envelope) map[string]any
+// 引擎不知道如何折叠业务状态，该函数负责解析 Body 并聚合为快照数据。
+// 返回的 json.RawMessage 由引擎原样存储，Replay 时原样返回。
+type SnapshotBuilder func(events []Envelope) (json.RawMessage, error)
 
 // Options 引擎配置。
 type Options struct {
