@@ -11,12 +11,13 @@ import (
 
 // snapshotStore 快照的存储与加载。
 type snapshotStore struct {
-	rdb redis.UniversalClient
-	ns  string
+	rdb           redis.UniversalClient
+	ns            string
+	maxSessionTTL time.Duration
 }
 
-func newSnapshotStore(rdb redis.UniversalClient, ns string) *snapshotStore {
-	return &snapshotStore{rdb: rdb, ns: ns}
+func newSnapshotStore(rdb redis.UniversalClient, ns string, maxTTL time.Duration) *snapshotStore {
+	return &snapshotStore{rdb: rdb, ns: ns, maxSessionTTL: maxTTL}
 }
 
 // load 加载最新快照，不存在时返回 nil。
@@ -43,7 +44,7 @@ func (ss *snapshotStore) save(ctx context.Context, sessionID string, snap *Snaps
 	if err != nil {
 		return err
 	}
-	return ss.rdb.Set(ctx, key, raw, 0).Err()
+	return ss.rdb.Set(ctx, key, raw, ss.maxSessionTTL).Err()
 }
 
 // buildAsync 异步构建快照（在 goroutine 中调用）。

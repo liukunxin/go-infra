@@ -41,8 +41,8 @@ func New(rdb redis.UniversalClient, opts ...Option) *Engine {
 		seq:      newSequencer(rdb, ns),
 		eventLog: newEventLog(rdb, ns),
 		dedup:    newDedup(rdb, ns, o.DedupTTL),
-		snap:     newSnapshotStore(rdb, ns),
-		session:  newSessionManager(rdb, ns),
+		snap:     newSnapshotStore(rdb, ns, o.MaxSessionTTL),
+		session:  newSessionManager(rdb, ns, o.MaxSessionTTL),
 		sub:      newSubscriber(rdb, ns, o.BlockTimeout),
 	}
 }
@@ -108,6 +108,13 @@ func (e *Engine) Append(ctx context.Context, evt Envelope) (Envelope, error) {
 	}
 
 	evt.Seq = seq
+
+	// 续期兜底 TTL（每次 Append 刷新，保证活跃 session 不会过期）
+	if e.opts.MaxSessionTTL > 0 {
+		e.rdb.Expire(ctx, streamK, e.opts.MaxSessionTTL)
+		e.rdb.Expire(ctx, seqK, e.opts.MaxSessionTTL)
+		e.rdb.Expire(ctx, metaKey(e.opts.Namespace, evt.SessionID), e.opts.MaxSessionTTL)
+	}
 
 	// 快照检查（异步）
 	if e.opts.SnapshotBuilder != nil && e.opts.SnapEvery > 0 && seq%e.opts.SnapEvery == 0 {

@@ -10,12 +10,13 @@ import (
 
 // sessionManager 会话生命周期管理。
 type sessionManager struct {
-	rdb redis.UniversalClient
-	ns  string
+	rdb           redis.UniversalClient
+	ns            string
+	maxSessionTTL time.Duration
 }
 
-func newSessionManager(rdb redis.UniversalClient, ns string) *sessionManager {
-	return &sessionManager{rdb: rdb, ns: ns}
+func newSessionManager(rdb redis.UniversalClient, ns string, maxTTL time.Duration) *sessionManager {
+	return &sessionManager{rdb: rdb, ns: ns, maxSessionTTL: maxTTL}
 }
 
 // create 创建新会话，如果已存在返回 ErrSessionExists。
@@ -34,6 +35,11 @@ func (sm *sessionManager) create(ctx context.Context, id string) (Session, error
 
 	if err = sm.rdb.HSet(ctx, key, "created_at", strconv.FormatInt(now, 10)).Err(); err != nil {
 		return Session{}, err
+	}
+
+	// 兜底 TTL：防止 session 永远不 close 导致 key 永驻
+	if sm.maxSessionTTL > 0 {
+		sm.rdb.Expire(ctx, key, sm.maxSessionTTL)
 	}
 
 	return Session{

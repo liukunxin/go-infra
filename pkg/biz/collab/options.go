@@ -17,6 +17,7 @@ type Options struct {
 	SnapEvery       int64           // 每 N 条事件自动快照，默认 500（0=禁用）
 	DedupTTL        time.Duration   // 去重窗口，默认 30 分钟
 	BlockTimeout    time.Duration   // Subscribe XREAD BLOCK 超时，默认 5 秒
+	MaxSessionTTL   time.Duration   // 会话最大存活时间（兜底 TTL），默认 0=不设置；设置后 create/append 自动续期
 	SnapshotBuilder SnapshotBuilder // 快照构建函数（可选）
 }
 
@@ -56,6 +57,14 @@ func WithDedupTTL(d time.Duration) Option {
 // WithBlockTimeout 设置 Subscribe XREAD BLOCK 超时。
 func WithBlockTimeout(d time.Duration) Option {
 	return func(o *Options) { o.BlockTimeout = d }
+}
+
+// WithMaxSessionTTL 设置会话最大存活时间（兜底 TTL）。
+// 设置后，create 时会对 meta key 设置 TTL，append 时自动续期所有 session key。
+// 用于防止 session 创建后永远不 close 导致 Redis key 永久残留。
+// 0 表示不设置（默认行为，向后兼容）。
+func WithMaxSessionTTL(d time.Duration) Option {
+	return func(o *Options) { o.MaxSessionTTL = d }
 }
 
 // WithSnapshotBuilder 设置快照构建函数。
