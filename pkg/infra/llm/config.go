@@ -34,6 +34,9 @@ type ProviderConfig struct {
 	GatewayProvider string `yaml:"gateway_provider" json:"gateway_provider"`
 	GatewayVersion  string `yaml:"gateway_version" json:"gateway_version"`
 	Path            string `yaml:"path" json:"path"`
+	ProductName     string `yaml:"product_name" json:"product_name"`
+	IntentionCode   string `yaml:"intention_code" json:"intention_code"`
+	DefaultUID      string `yaml:"default_uid" json:"default_uid"`
 }
 
 // FallbackConfig defines primary route and backup targets.
@@ -119,6 +122,9 @@ func buildProvider(name string, cfg ProviderConfig) (Provider, error) {
 			GatewayProvider: cfg.GatewayProvider,
 			GatewayVersion:  cfg.GatewayVersion,
 			Path:            cfg.Path,
+			ProductName:     cfg.ProductName,
+			IntentionCode:   cfg.IntentionCode,
+			DefaultUID:      cfg.DefaultUID,
 		})
 	default:
 		return nil, fmt.Errorf("%w: unsupported provider type %q", ErrInvalidConfig, providerType)

@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,12 @@ import (
 	"strings"
 	"time"
 )
+
+func randomHex32() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 const ProviderTypeAIGateway = "ai_gateway"
 
@@ -26,8 +34,12 @@ type AIGatewayConfig struct {
 	Retry           RetryConfig       `yaml:"retry" json:"retry"`
 	GatewayProvider string            `yaml:"gateway_provider" json:"gateway_provider"`
 	GatewayVersion  string            `yaml:"gateway_version" json:"gateway_version"`
-	// Path 请求路径，默认 "/v1/chat/completions"
-	Path string `yaml:"path" json:"path"`
+	Path            string            `yaml:"path" json:"path"`
+
+	// AI Gateway 业务鉴权字段
+	ProductName   string `yaml:"product_name" json:"product_name"`
+	IntentionCode string `yaml:"intention_code" json:"intention_code"`
+	DefaultUID    string `yaml:"default_uid" json:"default_uid"`
 }
 
 type aiGatewayProvider struct {
@@ -41,6 +53,9 @@ type aiGatewayProvider struct {
 	gatewayProvider string
 	gatewayVersion  string
 	path            string
+	productName     string
+	intentionCode   string
+	defaultUID      string
 }
 
 // NewAIGatewayProvider builds a provider for the internal AI gateway.
@@ -79,6 +94,9 @@ func NewAIGatewayProvider(name string, cfg AIGatewayConfig) (Provider, error) {
 		gatewayProvider: cfg.GatewayProvider,
 		gatewayVersion:  cfg.GatewayVersion,
 		path:            path,
+		productName:     cfg.ProductName,
+		intentionCode:   cfg.IntentionCode,
+		defaultUID:      cfg.DefaultUID,
 	}, nil
 }
 
@@ -334,6 +352,19 @@ func (p *aiGatewayProvider) applyHeaders(req *http.Request) {
 	if strings.TrimSpace(p.apiKey) != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
+	if p.productName != "" {
+		req.Header.Set("AI-Gateway-Product-Name", p.productName)
+	}
+	if p.intentionCode != "" {
+		req.Header.Set("AI-Gateway-Intention-Code", p.intentionCode)
+	}
+	if p.defaultUID != "" {
+		req.Header.Set("AI-Gateway-Uid", p.defaultUID)
+	}
+	// X-Action-Id: 每次请求生成 32 位随机十六进制数
+	req.Header.Set("X-Action-Id", randomHex32())
+	// Client-Request-Id: 复用 uuid 作为全链路追踪 ID
+	req.Header.Set("Client-Request-Id", randomHex32())
 	for k, v := range p.headers {
 		req.Header.Set(k, v)
 	}
