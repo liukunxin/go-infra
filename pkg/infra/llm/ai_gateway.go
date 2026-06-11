@@ -120,21 +120,27 @@ func (p *aiGatewayProvider) Generate(ctx context.Context, req GenerateRequest) (
 	if status >= http.StatusBadRequest {
 		return nil, p.buildProviderError(status, headers, respBody)
 	}
-	var resp openAIChatResponse
+	var resp aiGatewayResponse
 	if err := json.Unmarshal(respBody, &resp); err != nil {
 		return nil, fmt.Errorf("llm: decode ai_gateway response: %w", err)
 	}
+	if resp.Code != "Success" {
+		return nil, &ProviderError{
+			Provider:   p.name,
+			HTTPStatus: status,
+			RequestID:  resp.TaskID,
+			Code:       resp.Code,
+			Message:    resp.Message,
+		}
+	}
 	out := &GenerateResponse{
 		Provider: p.name,
-		Model:    resp.Model,
+		Model:    model,
 		Usage:    resp.Usage,
 	}
 	if len(resp.Choices) > 0 {
-		out.Content = resp.Choices[0].Message.Content
+		out.Content = resp.Choices[0].Text
 		out.FinishReason = resp.Choices[0].FinishReason
-	}
-	if out.Model == "" {
-		out.Model = model
 	}
 	return out, nil
 }
@@ -175,24 +181,24 @@ func (p *aiGatewayProvider) GenerateStream(ctx context.Context, req GenerateRequ
 				ch <- StreamEvent{Provider: p.name, Model: model, Done: true}
 				return
 			}
-			var chunk openAIChatStreamChunk
+			var chunk aiGatewayStreamChunk
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 				ch <- StreamEvent{Provider: p.name, Model: model, Err: fmt.Errorf("llm: decode stream chunk: %w", err)}
 				return
 			}
-			eventModel := chunk.Model
-			if eventModel == "" {
-				eventModel = model
+			if chunk.Code != "" && chunk.Code != "Success" {
+				ch <- StreamEvent{Provider: p.name, Model: model, Err: fmt.Errorf("ai_gateway: %s: %s", chunk.Code, chunk.Message)}
+				return
 			}
 			if len(chunk.Choices) == 0 && chunk.Usage != nil {
-				ch <- StreamEvent{Provider: p.name, Model: eventModel, Usage: chunk.Usage}
+				ch <- StreamEvent{Provider: p.name, Model: model, Usage: chunk.Usage}
 				continue
 			}
 			for _, choice := range chunk.Choices {
 				ch <- StreamEvent{
 					Provider:     p.name,
-					Model:        eventModel,
-					Delta:        choice.Delta.Content,
+					Model:        model,
+					Delta:        choice.Text,
 					FinishReason: choice.FinishReason,
 				}
 			}
@@ -376,31 +382,50 @@ func (p *aiGatewayProvider) buildProviderError(status int, headers http.Header, 
 		msg = http.StatusText(status)
 	}
 	var parsed struct {
-		Error struct {
-			Message string `json:"message"`
-			Type    string `json:"type"`
-			Code    any    `json:"code"`
-		} `json:"error"`
-		Msg string `json:"msg"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		TaskID  string `json:"task_id"`
 	}
-	var code, typ string
+	var code string
 	if err := json.Unmarshal(raw, &parsed); err == nil {
-		if parsed.Error.Message != "" {
-			msg = parsed.Error.Message
-			typ = parsed.Error.Type
-			if parsed.Error.Code != nil {
-				code = fmt.Sprintf("%v", parsed.Error.Code)
-			}
-		} else if parsed.Msg != "" {
-			msg = parsed.Msg
+		if parsed.Message != "" {
+			msg = parsed.Message
 		}
+		code = parsed.Code
 	}
 	return &ProviderError{
 		Provider:   p.name,
 		HTTPStatus: status,
 		RequestID:  headers.Get("x-request-id"),
 		Code:       code,
-		Type:       typ,
 		Message:    msg,
 	}
+}
+
+// ── AI Gateway 响应结构 ──
+
+type aiGatewayResponse struct {
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	ExternalID string `json:"external_id"`
+	Created    int64  `json:"created"`
+	TaskID     string `json:"task_id"`
+	Choices    []struct {
+		Index            int    `json:"index"`
+		FinishReason     string `json:"finish_reason"`
+		Text             string `json:"text"`
+		ReasoningContent string `json:"reasoning_content"`
+	} `json:"choices"`
+	Usage Usage `json:"usage"`
+}
+
+type aiGatewayStreamChunk struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Choices []struct {
+		Index        int    `json:"index"`
+		FinishReason string `json:"finish_reason"`
+		Text         string `json:"text"`
+	} `json:"choices"`
+	Usage *Usage `json:"usage,omitempty"`
 }
