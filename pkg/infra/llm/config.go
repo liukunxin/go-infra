@@ -29,6 +29,11 @@ type ProviderConfig struct {
 	HTTPTimeout  time.Duration     `yaml:"http_timeout" json:"http_timeout"`
 	Retry        RetryConfig       `yaml:"retry" json:"retry"`
 	Headers      map[string]string `yaml:"headers" json:"headers"`
+
+	// AI Gateway 专属字段
+	GatewayProvider string `yaml:"gateway_provider" json:"gateway_provider"`
+	GatewayVersion  string `yaml:"gateway_version" json:"gateway_version"`
+	Path            string `yaml:"path" json:"path"`
 }
 
 // FallbackConfig defines primary route and backup targets.
@@ -88,12 +93,13 @@ func buildProvider(name string, cfg ProviderConfig) (Provider, error) {
 	if providerType == "" {
 		providerType = ProviderTypeOpenAICompatible
 	}
+	apiKey := strings.TrimSpace(cfg.APIKey)
+	if apiKey == "" && strings.TrimSpace(cfg.APIKeyEnv) != "" {
+		apiKey = os.Getenv(strings.TrimSpace(cfg.APIKeyEnv))
+	}
+
 	switch providerType {
 	case ProviderTypeOpenAICompatible:
-		apiKey := strings.TrimSpace(cfg.APIKey)
-		if apiKey == "" && strings.TrimSpace(cfg.APIKeyEnv) != "" {
-			apiKey = os.Getenv(strings.TrimSpace(cfg.APIKeyEnv))
-		}
 		return NewOpenAICompatibleProvider(name, OpenAICompatibleConfig{
 			BaseURL:      cfg.BaseURL,
 			APIKey:       apiKey,
@@ -101,6 +107,18 @@ func buildProvider(name string, cfg ProviderConfig) (Provider, error) {
 			Retry:        cfg.Retry,
 			Headers:      cfg.Headers,
 			DefaultModel: cfg.DefaultModel,
+		})
+	case ProviderTypeAIGateway:
+		return NewAIGatewayProvider(name, AIGatewayConfig{
+			BaseURL:         cfg.BaseURL,
+			APIKey:          apiKey,
+			HTTPTimeout:     cfg.HTTPTimeout,
+			Retry:           cfg.Retry,
+			Headers:         cfg.Headers,
+			DefaultModel:    cfg.DefaultModel,
+			GatewayProvider: cfg.GatewayProvider,
+			GatewayVersion:  cfg.GatewayVersion,
+			Path:            cfg.Path,
 		})
 	default:
 		return nil, fmt.Errorf("%w: unsupported provider type %q", ErrInvalidConfig, providerType)
