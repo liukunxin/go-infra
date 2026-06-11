@@ -9,11 +9,12 @@ import (
 var (
 	globalClient atomic.Pointer[Client]
 	initOnce     sync.Once
+	initErr      error
 )
 
 // Init initializes the global LLM client. Only the first call takes effect.
+// If Init fails, subsequent calls will return the same error.
 func Init(opts ...Option) error {
-	var initErr error
 	initOnce.Do(func() {
 		c, err := New(opts...)
 		if err != nil {
@@ -25,7 +26,7 @@ func Init(opts ...Option) error {
 	return initErr
 }
 
-// GetClient returns the global client. Panics if Init has not been called.
+// GetClient returns the global client. Panics if Init has not been called or failed.
 func GetClient() *Client {
 	c := globalClient.Load()
 	if c == nil {
