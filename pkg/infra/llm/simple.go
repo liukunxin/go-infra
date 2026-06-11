@@ -2,18 +2,17 @@ package llm
 
 import (
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
 
 // OpenAICompatibleClientConfig is a one-shot config for quickest setup.
+// APIKey 支持直接填值或 "${ENV_NAME}" 语法从环境变量读取。
 type OpenAICompatibleClientConfig struct {
 	Provider    string
 	Model       string
 	BaseURL     string
 	APIKey      string
-	APIKeyEnv   string
 	HTTPClient  *http.Client
 	HTTPTimeout time.Duration
 	Headers     map[string]string
@@ -44,10 +43,7 @@ func buildSimpleOptions(cfg OpenAICompatibleClientConfig) ([]Option, error) {
 	if providerName == "" {
 		providerName = "default"
 	}
-	apiKey := strings.TrimSpace(cfg.APIKey)
-	if apiKey == "" && strings.TrimSpace(cfg.APIKeyEnv) != "" {
-		apiKey = os.Getenv(strings.TrimSpace(cfg.APIKeyEnv))
-	}
+	apiKey := resolveEnvValue(cfg.APIKey)
 	provider, err := NewOpenAICompatibleProvider(providerName, OpenAICompatibleConfig{
 		BaseURL:      cfg.BaseURL,
 		APIKey:       apiKey,

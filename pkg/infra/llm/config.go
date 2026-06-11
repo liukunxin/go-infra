@@ -20,11 +20,11 @@ type Config struct {
 }
 
 // ProviderConfig defines one provider entry under config.providers.
+// APIKey 支持两种写法：直接填值 "sk-xxx" 或环境变量引用 "${ENV_NAME}"。
 type ProviderConfig struct {
 	Type         string            `yaml:"type" json:"type"`
 	BaseURL      string            `yaml:"base_url" json:"base_url"`
 	APIKey       string            `yaml:"api_key" json:"api_key"`
-	APIKeyEnv    string            `yaml:"api_key_env" json:"api_key_env"`
 	DefaultModel string            `yaml:"default_model" json:"default_model"`
 	HTTPTimeout  time.Duration     `yaml:"http_timeout" json:"http_timeout"`
 	Retry        RetryConfig       `yaml:"retry" json:"retry"`
@@ -96,10 +96,7 @@ func buildProvider(name string, cfg ProviderConfig) (Provider, error) {
 	if providerType == "" {
 		providerType = ProviderTypeOpenAICompatible
 	}
-	apiKey := strings.TrimSpace(cfg.APIKey)
-	if apiKey == "" && strings.TrimSpace(cfg.APIKeyEnv) != "" {
-		apiKey = os.Getenv(strings.TrimSpace(cfg.APIKeyEnv))
-	}
+	apiKey := resolveEnvValue(cfg.APIKey)
 
 	switch providerType {
 	case ProviderTypeOpenAICompatible:
@@ -129,4 +126,13 @@ func buildProvider(name string, cfg ProviderConfig) (Provider, error) {
 	default:
 		return nil, fmt.Errorf("%w: unsupported provider type %q", ErrInvalidConfig, providerType)
 	}
+}
+
+// resolveEnvValue 解析配置值：支持 "${ENV_NAME}" 语法从环境变量读取，否则直接返回原值。
+func resolveEnvValue(val string) string {
+	val = strings.TrimSpace(val)
+	if strings.HasPrefix(val, "${") && strings.HasSuffix(val, "}") {
+		return os.Getenv(val[2 : len(val)-1])
+	}
+	return val
 }
