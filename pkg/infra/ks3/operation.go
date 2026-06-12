@@ -15,6 +15,19 @@ type PutOptions struct {
 	Size        int64
 }
 
+// GetObject downloads an object from the specified bucket.
+// The caller must close the returned ReadCloser when finished.
+func GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+	resp, err := client.GetObjectWithContext(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
+}
+
 // PutObject uploads an object to the specified bucket.
 // body is read until EOF; the caller is responsible for closing it.
 func PutObject(ctx context.Context, bucket, key string, body io.Reader, opts PutOptions) error {
