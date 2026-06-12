@@ -57,3 +57,18 @@ func PresignGetURL(_ context.Context, bucket, key string, ttl time.Duration) (st
 		Expires:    seconds,
 	})
 }
+
+// PresignPutURL generates a presigned URL for uploading (PUT) an object.
+// ttl must be between 1 s and 7 d (604800 s); out-of-range values are clamped to 3600 s.
+func PresignPutURL(_ context.Context, bucket, key string, ttl time.Duration) (string, error) {
+	seconds := int64(ttl.Seconds())
+	if seconds <= 0 || seconds > 604800 {
+		seconds = 3600
+	}
+	return client.GeneratePresignedUrl(&s3.GeneratePresignedUrlInput{
+		Bucket:     aws.String(bucket),
+		Key:        aws.String(key),
+		HTTPMethod: s3.HTTPMethod("PUT"),
+		Expires:    seconds,
+	})
+}
