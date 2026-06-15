@@ -44,6 +44,7 @@
 | **biz** | **login** | 多方式登录（密码/手机/邮箱/微信）+ JWT | [查看文档](pkg/biz/login/README.md) |
 | **biz** | **account** | 账号管理与多登录方式绑定 | [查看文档](pkg/biz/account/README.md) |
 | **biz** | **pay** | 微信支付 APIv3 / 支付宝 RSA2 | [查看文档](pkg/biz/pay/README.md) |
+| **biz** | **collab** | 跨端实时协作引擎（定序/去重/回放/订阅） | [查看文档](pkg/biz/collab/README.md) |
 | **biz** | **controller** | Gin 基础控制器（统一响应格式） | `pkg/biz/controller/` |
 | **biz** | **middlewares** | Gin 中间件（日志/追踪/CORS 等） | `pkg/biz/middlewares/` |
 
@@ -122,6 +123,7 @@ func main() {
 
 ### pkg/biz — 业务基础能力
 
+- [实时协作 (collab)](pkg/biz/collab/README.md) - 跨端实时协作引擎（全局定序/幂等去重/历史回放/实时订阅）
 - [登录 (login)](pkg/biz/login/README.md) - 多方式登录 + JWT
 - [账号 (account)](pkg/biz/account/README.md) - 账号管理与登录绑定
 - [支付 (pay)](pkg/biz/pay/README.md) - 微信 / 支付宝支付封装
