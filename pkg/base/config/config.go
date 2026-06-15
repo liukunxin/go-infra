@@ -24,6 +24,7 @@ type validatable interface {
 }
 
 // Load 按基础配置 + 环境配置（覆盖）顺序加载配置。
+// 设置了 region 时，配置目录切换为 {baseDir}/{region}/，各 region 完全隔离。
 func Load[T any](opts ...Option) (*T, error) {
 	c := defaultOptionConfig()
 	for _, opt := range opts {
@@ -32,6 +33,10 @@ func Load[T any](opts ...Option) (*T, error) {
 		}
 	}
 	baseDir := c.resolveBaseDir()
+
+	if region := c.resolveRegion(); region != "" {
+		baseDir = filepath.Join(baseDir, region)
+	}
 
 	resolvedEnv, err := normalizeEnv(c.resolveEnv())
 	if err != nil {
@@ -123,6 +128,18 @@ func (c *optionConfig) resolveEnv() string {
 		}
 	}
 	return env.GetEnv()
+}
+
+func (c *optionConfig) resolveRegion() string {
+	if c.region != "" {
+		return c.region
+	}
+	if c.regionKey != "" {
+		if val := os.Getenv(c.regionKey); val != "" {
+			return strings.ToLower(strings.TrimSpace(val))
+		}
+	}
+	return env.GetRegion()
 }
 
 func (c *optionConfig) resolveBaseDir() string {

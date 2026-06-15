@@ -11,6 +11,8 @@ import (
 type optionConfig struct {
 	env            string
 	envKey         string
+	region         string
+	regionKey      string
 	baseDir        string
 	baseDirSet     bool
 	fileName       string
@@ -23,6 +25,7 @@ type optionConfig struct {
 func defaultOptionConfig() *optionConfig {
 	return &optionConfig{
 		envKey:         consts.Env,
+		regionKey:      consts.Region,
 		baseDir:        "configs",
 		fileName:       "config",
 		fileExt:        ".yml",
@@ -111,6 +114,24 @@ func WithValidate(enabled bool) Option {
 func WithTagValidation(enabled bool) Option {
 	return option.Func[optionConfig](func(c *optionConfig) error {
 		c.validateByTags = enabled
+		return nil
+	})
+}
+
+// WithRegion 显式指定区域（如 sg、us），用于多区域部署场景。
+// 设置后配置目录切换为 {baseDir}/{region}/，与默认目录完全隔离。
+// 不设置时从默认目录加载，行为不变。
+func WithRegion(region string) Option {
+	return option.Func[optionConfig](func(c *optionConfig) error {
+		c.region = strings.TrimSpace(region)
+		return nil
+	})
+}
+
+// WithRegionFrom 指定读取区域的环境变量名（默认 "region"）。
+func WithRegionFrom(envKey string) Option {
+	return option.Func[optionConfig](func(c *optionConfig) error {
+		c.regionKey = strings.TrimSpace(envKey)
 		return nil
 	})
 }

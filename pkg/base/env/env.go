@@ -18,6 +18,7 @@ var modeName = []string{
 
 var nameState atomic.Pointer[string]
 var envState atomic.Pointer[string]
+var regionState atomic.Pointer[string]
 var modeState atomic.Pointer[Mode]
 
 func init() {
@@ -39,6 +40,18 @@ func SetEnv(env string) {
 
 func GetEnv() string {
 	p := envState.Load()
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func SetRegion(region string) {
+	regionState.Store(&region)
+}
+
+func GetRegion() string {
+	p := regionState.Load()
 	if p == nil {
 		return ""
 	}
