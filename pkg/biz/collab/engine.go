@@ -138,6 +138,7 @@ func (e *Engine) Replay(ctx context.Context, sessionID string, fromSeq int64) (R
 
 	var result ReplayResult
 	effectiveFromSeq := fromSeq
+	startStreamID := ""
 
 	// 尝试加载快照
 	if fromSeq == 0 {
@@ -148,23 +149,16 @@ func (e *Engine) Replay(ctx context.Context, sessionID string, fromSeq int64) (R
 		if snap != nil {
 			result.Snapshot = snap
 			effectiveFromSeq = snap.Seq
+			startStreamID = snap.StreamID
 		}
 	}
 
-	// 读取事件
-	events, err := e.eventLog.readAll(ctx, sessionID)
+	// 从快照位置（或起始位置）开始读取，只返回 seq > effectiveFromSeq 的事件
+	events, err := e.eventLog.readAfterSeq(ctx, sessionID, startStreamID, effectiveFromSeq)
 	if err != nil {
 		return ReplayResult{}, err
 	}
-
-	// 过滤 seq > effectiveFromSeq 的事件
-	filtered := make([]Envelope, 0, len(events))
-	for i := range events {
-		if events[i].Seq > effectiveFromSeq {
-			filtered = append(filtered, events[i])
-		}
-	}
-	result.Events = filtered
+	result.Events = events
 
 	// 获取 lastSeq
 	lastSeq, err := e.seq.current(ctx, sessionID)

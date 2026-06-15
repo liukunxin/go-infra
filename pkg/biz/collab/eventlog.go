@@ -51,6 +51,45 @@ func (el *eventLog) readAll(ctx context.Context, sessionID string) ([]Envelope, 
 	return el.readFrom(ctx, sessionID, "0-0", 0)
 }
 
+// readAllWithLastID 读取 session 的全部事件，同时返回最后一条消息的 Stream ID。
+// 保证返回的 lastStreamID 与 events 一致（同一次 XRANGE 调用），无竞态。
+func (el *eventLog) readAllWithLastID(ctx context.Context, sessionID string) (events []Envelope, lastStreamID string, err error) {
+	key := streamKey(el.ns, sessionID)
+	msgs, err := el.rdb.XRange(ctx, key, "0-0", "+").Result()
+	if err != nil {
+		return nil, "", err
+	}
+	events = make([]Envelope, 0, len(msgs))
+	for _, msg := range msgs {
+		lastStreamID = msg.ID
+		evt, parseErr := parseMessage(msg)
+		if parseErr != nil {
+			continue
+		}
+		events = append(events, evt)
+	}
+	return events, lastStreamID, nil
+}
+
+// readAfterSeq 从 startStreamID 开始（不含）读取 seq > afterSeq 的事件。
+// 如果 startStreamID 为空则从 "0-0" 开始。
+func (el *eventLog) readAfterSeq(ctx context.Context, sessionID string, startStreamID string, afterSeq int64) ([]Envelope, error) {
+	if startStreamID == "" {
+		startStreamID = "0-0"
+	}
+	all, err := el.readFrom(ctx, sessionID, startStreamID, 0)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]Envelope, 0, len(all))
+	for i := range all {
+		if all[i].Seq > afterSeq {
+			filtered = append(filtered, all[i])
+		}
+	}
+	return filtered, nil
+}
+
 // parseMessage 从 Redis Stream Message 解析出 Envelope。
 // Stream 消息中 seq 字段为权威序号，data 字段为 JSON 载荷。
 func parseMessage(msg redis.XMessage) (Envelope, error) {

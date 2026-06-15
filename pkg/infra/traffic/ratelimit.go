@@ -3,6 +3,7 @@ package traffic
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"golang.org/x/time/rate"
 )
@@ -21,19 +22,50 @@ type RateLimitController struct {
 	limiters map[string]*rate.Limiter
 	r        rate.Limit // tokens per second
 	b        int        // burst size
+
+	stopEvict chan struct{}
 }
 
 // NewRateLimitController creates a controller that allows r requests per second
 // per resource, with a burst capacity of b.
 // r == rate.Inf means no limit; b must be > 0.
+// A background goroutine periodically clears the map to prevent unbounded growth.
+// Call Close to stop it.
 func NewRateLimitController(r rate.Limit, b int) *RateLimitController {
 	if b <= 0 {
 		b = 1
 	}
-	return &RateLimitController{
-		limiters: make(map[string]*rate.Limiter),
-		r:        r,
-		b:        b,
+	c := &RateLimitController{
+		limiters:  make(map[string]*rate.Limiter),
+		r:         r,
+		b:         b,
+		stopEvict: make(chan struct{}),
+	}
+	go c.evictLoop()
+	return c
+}
+
+// Close stops the background eviction goroutine.
+func (c *RateLimitController) Close() {
+	select {
+	case <-c.stopEvict:
+	default:
+		close(c.stopEvict)
+	}
+}
+
+func (c *RateLimitController) evictLoop() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.stopEvict:
+			return
+		case <-ticker.C:
+			c.mu.Lock()
+			c.limiters = make(map[string]*rate.Limiter)
+			c.mu.Unlock()
+		}
 	}
 }
 

@@ -73,9 +73,8 @@ func (h *Hub) Broadcast(msgType cws.MessageType, data []byte) {
 	if h == nil {
 		return
 	}
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	for _, conn := range h.conns {
+	targets := h.snapshotConns()
+	for _, conn := range targets {
 		_ = conn.Send(msgType, data)
 	}
 }
@@ -84,9 +83,31 @@ func (h *Hub) BroadcastGroup(group string, msgType cws.MessageType, data []byte)
 	if h == nil || group == "" {
 		return
 	}
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	for _, conn := range h.groups[group] {
+	targets := h.snapshotGroup(group)
+	for _, conn := range targets {
 		_ = conn.Send(msgType, data)
 	}
+}
+
+// snapshotConns returns a copy of all registered connections under a short lock hold.
+func (h *Hub) snapshotConns() []*Conn {
+	h.mu.RLock()
+	conns := make([]*Conn, 0, len(h.conns))
+	for _, conn := range h.conns {
+		conns = append(conns, conn)
+	}
+	h.mu.RUnlock()
+	return conns
+}
+
+// snapshotGroup returns a copy of connections in a group under a short lock hold.
+func (h *Hub) snapshotGroup(group string) []*Conn {
+	h.mu.RLock()
+	members := h.groups[group]
+	conns := make([]*Conn, 0, len(members))
+	for _, conn := range members {
+		conns = append(conns, conn)
+	}
+	h.mu.RUnlock()
+	return conns
 }

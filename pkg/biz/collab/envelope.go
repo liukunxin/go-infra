@@ -27,9 +27,10 @@ type Session struct {
 
 // Snapshot 状态快照，用于加速回放。
 type Snapshot struct {
-	Seq     int64           `json:"seq"`
-	Data    json.RawMessage `json:"data"`     // 由 SnapshotBuilder 产出，引擎不解析
-	BuiltAt int64           `json:"built_at"` // unix 毫秒
+	Seq      int64           `json:"seq"`
+	Data     json.RawMessage `json:"data"`               // 由 SnapshotBuilder 产出，引擎不解析
+	BuiltAt  int64           `json:"built_at"`            // unix 毫秒
+	StreamID string          `json:"stream_id,omitempty"` // 快照时刻的 Stream 最新 ID，回放时从此处开始读取
 }
 
 // ReplayResult 回放结果。

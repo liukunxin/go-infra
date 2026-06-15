@@ -33,6 +33,14 @@ type CircuitBreakerConfig struct {
 	// HalfOpenSuccessThreshold is the number of consecutive probe successes
 	// required to close the circuit again. Default: 1
 	HalfOpenSuccessThreshold int
+
+	// IdleEvictAfter is how long a breaker in Closed state must be idle (no
+	// TryPass calls) before it becomes eligible for eviction. Default: 10m
+	IdleEvictAfter time.Duration
+
+	// IdleEvictInterval is how often the background goroutine checks for idle
+	// breakers to evict. Default: 1m
+	IdleEvictInterval time.Duration
 }
 
 func (c CircuitBreakerConfig) withDefaults() CircuitBreakerConfig {
@@ -53,6 +61,12 @@ func (c CircuitBreakerConfig) withDefaults() CircuitBreakerConfig {
 	}
 	if c.HalfOpenSuccessThreshold <= 0 {
 		c.HalfOpenSuccessThreshold = 1
+	}
+	if c.IdleEvictAfter <= 0 {
+		c.IdleEvictAfter = 10 * time.Minute
+	}
+	if c.IdleEvictInterval <= 0 {
+		c.IdleEvictInterval = 1 * time.Minute
 	}
 	return c
 }
@@ -150,9 +164,10 @@ type resourceBreaker struct {
 	window *slidingWindow
 	cfg    CircuitBreakerConfig
 
-	openedAt                time.Time
-	halfOpenInFlight        int // probes currently executing
-	halfOpenSuccessStreak   int // consecutive successes in Half-Open
+	openedAt              time.Time
+	halfOpenInFlight      int // probes currently executing
+	halfOpenSuccessStreak int // consecutive successes in Half-Open
+	lastAccess            time.Time // updated on every tryAcquire; used for eviction
 }
 
 // tryAcquire decides whether to allow a request.
@@ -161,6 +176,8 @@ type resourceBreaker struct {
 func (rb *resourceBreaker) tryAcquire() (bool, func(success bool)) {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
+
+	rb.lastAccess = time.Now()
 
 	switch rb.state {
 	case cbClosed:
@@ -246,13 +263,57 @@ type CircuitBreakerController struct {
 	mu       sync.Mutex
 	breakers map[string]*resourceBreaker
 	cfg      CircuitBreakerConfig
+
+	stopEvict chan struct{}
 }
 
 // NewCircuitBreakerController creates a controller. Zero-value config fields use defaults.
+// A background goroutine periodically evicts breakers that have been idle (in Closed state)
+// for longer than IdleEvictAfter. Call Close to stop the goroutine.
 func NewCircuitBreakerController(cfg CircuitBreakerConfig) *CircuitBreakerController {
-	return &CircuitBreakerController{
-		breakers: make(map[string]*resourceBreaker),
-		cfg:      cfg.withDefaults(),
+	cfg = cfg.withDefaults()
+	c := &CircuitBreakerController{
+		breakers:  make(map[string]*resourceBreaker),
+		cfg:       cfg,
+		stopEvict: make(chan struct{}),
+	}
+	go c.evictLoop()
+	return c
+}
+
+// Close stops the background eviction goroutine.
+func (c *CircuitBreakerController) Close() {
+	select {
+	case <-c.stopEvict:
+	default:
+		close(c.stopEvict)
+	}
+}
+
+func (c *CircuitBreakerController) evictLoop() {
+	ticker := time.NewTicker(c.cfg.IdleEvictInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.stopEvict:
+			return
+		case <-ticker.C:
+			c.evictIdle()
+		}
+	}
+}
+
+func (c *CircuitBreakerController) evictIdle() {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for resource, rb := range c.breakers {
+		rb.mu.Lock()
+		idle := rb.state == cbClosed && now.Sub(rb.lastAccess) >= c.cfg.IdleEvictAfter
+		rb.mu.Unlock()
+		if idle {
+			delete(c.breakers, resource)
+		}
 	}
 }
 

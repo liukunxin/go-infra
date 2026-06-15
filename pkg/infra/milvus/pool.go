@@ -1,18 +1,19 @@
 package milvus
 
 import (
-	"github.com/liukunxin/go-infra/pkg/base/log"
 	"context"
 	"errors"
-	"github.com/milvus-io/milvus-sdk-go/v2/client"
 	"time"
+
+	"github.com/liukunxin/go-infra/pkg/base/log"
+	"github.com/milvus-io/milvus-sdk-go/v2/client"
 )
 
 // Pool 定义连接池结构
 type Pool struct {
-	clients    chan client.Client            // 存储连接的通道
-	maxSize    int                           // 最大连接数
-	createFunc func() (client.Client, error) // 创建新连接的方法
+	clients    chan client.Client
+	maxSize    int
+	createFunc func() (client.Client, error)
 }
 
 // NewPool 创建一个新的连接池
@@ -27,7 +28,6 @@ func NewPool(maxSize int, createFunc func() (client.Client, error)) (*Pool, erro
 		createFunc: createFunc,
 	}
 
-	// 预初始化连接池
 	for i := 0; i < maxSize; i++ {
 		milvusClient, err := createFunc()
 		if err != nil {
@@ -39,33 +39,37 @@ func NewPool(maxSize int, createFunc func() (client.Client, error)) (*Pool, erro
 	return p, nil
 }
 
-// Get 获取一个连接
+// Get 获取一个连接。
 func (p *Pool) Get() (client.Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	select {
-	case milvusClient := <-p.clients:
-		// 从池中获取连接
-		return milvusClient, nil
+	case c := <-p.clients:
+		return c, nil
 	case <-ctx.Done():
-		// 获取超时
 		return nil, ctx.Err()
 	}
 }
 
-// Put 归还连接到池中
+// Put 归还健康连接到池中。
 func (p *Pool) Put(milvusClient client.Client) {
-	// 放回池中，如果池已满则关闭连接
 	select {
 	case p.clients <- milvusClient:
-		// 成功放回池中
 	default:
-		// 池已满，关闭连接
-		err := milvusClient.Close()
-		if err != nil {
-			log.New().Errorf("[milvus_err]||err=%s", err.Error())
-		}
+		_ = milvusClient.Close()
 	}
+}
+
+// Discard 丢弃一个不可用的连接，关闭它并创建新连接补充到池中。
+// 当调用方发现连接出错时应调用此方法代替 Put。
+func (p *Pool) Discard(broken client.Client) {
+	_ = broken.Close()
+	newC, err := p.createFunc()
+	if err != nil {
+		log.New().Warnf("[milvus] discard: failed to recreate connection: %v", err)
+		return
+	}
+	p.Put(newC)
 }
 
 // Close 关闭连接池
@@ -87,9 +91,15 @@ func GetClient(ctx context.Context) (client.Client, error) {
 		}).Error("[milvus_err]||Failed to get Milvus client")
 		return nil, err
 	}
-	return milvusClient, err
+	return milvusClient, nil
 }
 
 func ReturnClient(c client.Client) {
-	defer milvusPool.Put(c)
+	milvusPool.Put(c)
+}
+
+// DiscardClient 丢弃一个不可用的连接并自动补充新连接到池中。
+// 当调用方发现 Milvus 操作出错（如连接断开）时调用此方法代替 ReturnClient。
+func DiscardClient(c client.Client) {
+	milvusPool.Discard(c)
 }
