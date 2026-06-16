@@ -5,6 +5,9 @@ go 1.25
 require (
 	github.com/alicebob/miniredis/v2 v2.33.0
 	github.com/apolloconfig/agollo/v4 v4.4.0
+	github.com/aws/aws-sdk-go-v2 v1.36.3
+	github.com/aws/aws-sdk-go-v2/credentials v1.17.67
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.3
 	github.com/bwmarrin/snowflake v0.3.0
 	github.com/coder/websocket v1.8.14
 	github.com/elastic/go-elasticsearch/v8 v8.19.4
@@ -14,7 +17,6 @@ require (
 	github.com/redis/go-redis/v9 v9.9.0
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/golang-jwt/jwt/v5 v5.3.0
-	github.com/ks3sdklib/aws-sdk-go v1.8.1
 	github.com/milvus-io/milvus-sdk-go/v2 v2.4.2
 	github.com/prometheus/client_golang v1.23.0
 	github.com/segmentio/kafka-go v0.4.50

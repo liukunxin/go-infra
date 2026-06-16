@@ -1,6 +1,6 @@
 # pkg/biz/image
 
-图片存储与防盗链访问封装，基于 KS3 对象存储实现，对业务层完全屏蔽底层存储细节。
+图片存储与防盗链访问封装，基于 S3 兼容对象存储实现，对业务层完全屏蔽底层存储细节。
 
 ---
 
@@ -10,8 +10,8 @@
 上传图片
   ↓
 业务层（image.Service）
-  ↓  生成 imageID + objectKey，存入 KS3（私有 ACL）
-KS3（pkg/infra/ks3）
+  ↓  生成 imageID + objectKey，存入对象存储（私有 ACL）
+ObjStore（pkg/infra/objstore）
   ↓
 返回 imageID 给业务
 
@@ -23,17 +23,17 @@ KS3（pkg/infra/ks3）
   ↓
 HTTP Handler 调用：ResolveAccessToken(ctx, token, viewerID)
   ↓  验证签名 + 有效期 + 用户匹配
-生成 KS3 预签名 URL（短期，默认 5 分钟）
+生成预签名 URL（短期，默认 5 分钟）
   ↓
-302 Redirect → KS3 临时 URL
+302 Redirect → 对象存储临时 URL
 ```
 
 **防盗链机制**：
-- 图片在 KS3 以私有 ACL 存储，不可直接访问
+- 图片以私有 ACL 存储，不可直接访问
 - 业务 URL 中携带 HMAC-SHA256 签名 Token，服务端验证
 - Token 支持绑定用户 ID（私有模式），防止 URL 分享后被他人使用
-- Token 与 KS3 临时 URL 均有有效期，即使泄露影响范围有限
-- KS3 预签名 URL 仅在服务端内部生成，对外不可见
+- Token 与预签名 URL 均有有效期，即使泄露影响范围有限
+- 预签名 URL 仅在服务端内部生成，对外不可见
 
 ---
 
@@ -43,17 +43,18 @@ HTTP Handler 调用：ResolveAccessToken(ctx, token, viewerID)
 
 ```go
 import (
-    "github.com/liukunxin/go-infra/pkg/infra/ks3"
+    "github.com/liukunxin/go-infra/pkg/infra/objstore"
     "github.com/liukunxin/go-infra/pkg/biz/image"
     "time"
 )
 
-// 初始化 KS3 客户端（全局一次）
-ks3.Init(&ks3.Config{
-    Region:   "BEIJING",
-    Endpoint: "ks3-cn-beijing.ksyuncs.com",
-    Ak:       "your-access-key",
-    Sk:       "your-secret-key",
+// 初始化对象存储客户端（全局一次，支持 KS3/OSS/OBS/MinIO 等）
+objstore.Init(&objstore.Config{
+    Region:    "cn-beijing",
+    Endpoint:  "ks3-cn-beijing.ksyuncs.com",
+    AccessKey: "your-access-key",
+    SecretKey: "your-secret-key",
+    Bucket:    "my-image-bucket",
 })
 
 // 创建图片服务
@@ -66,8 +67,7 @@ cfg := image.Config{
     AllowedMimeTypes: []string{"image/jpeg", "image/png", "image/webp"},
 }
 
-store := image.NewKS3Store(cfg.Bucket)
-svc, err := image.NewService(cfg, store, myMetaStore) // myMetaStore 实现 image.MetaStorage
+svc, err := image.NewService(cfg, myMetaStore) // myMetaStore 实现 image.MetaStorage
 ```
 
 ### 2. 上传图片
@@ -176,18 +176,33 @@ func (g *GormMetaStore) Delete(ctx context.Context, id string) error {
 
 ---
 
-## 替换存储供应商
+## 切换存储供应商
 
-只需实现 `image.ObjectStore` 接口，即可无缝切换到阿里 OSS、七牛云等：
+底层使用 `pkg/infra/objstore`（S3 兼容协议），切换供应商只需修改 objstore 初始化配置的 Endpoint：
 
 ```go
-type OSSStore struct{ client *oss.Client; bucket string }
+// 阿里 OSS
+objstore.Init(&objstore.Config{
+    Endpoint:  "https://oss-cn-hangzhou.aliyuncs.com",
+    AccessKey: "...",
+    SecretKey: "...",
+    Bucket:    "my-bucket",
+})
 
-func (o *OSSStore) Put(ctx context.Context, key string, body io.Reader, opts image.PutOptions) error { ... }
-func (o *OSSStore) Delete(ctx context.Context, key string) error { ... }
-func (o *OSSStore) PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error) { ... }
+// 华为 OBS
+objstore.Init(&objstore.Config{
+    Endpoint:  "https://obs.cn-north-4.myhuaweicloud.com",
+    AccessKey: "...",
+    SecretKey: "...",
+    Bucket:    "my-bucket",
+})
+```
 
-svc, _ := image.NewService(cfg, &OSSStore{...}, metaStore)
+如需在测试中注入自定义 client（如连接 MinIO），使用 `WithClient` 选项：
+
+```go
+client, _ := objstore.NewClient(&objstore.Config{Endpoint: "http://localhost:9000", ...})
+svc, _ := image.NewService(cfg, nil, image.WithClient(client))
 ```
 
 ---
@@ -196,9 +211,9 @@ svc, _ := image.NewService(cfg, &OSSStore{...}, metaStore)
 
 | 字段 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
-| `Bucket` | 是 | — | KS3 Bucket 名称 |
+| `Bucket` | 是 | — | 对象存储 Bucket 名称 |
 | `SignSecret` | 是 | — | HMAC 签名密钥，建议 32+ 字节随机串 |
 | `KeyPrefix` | 否 | `"images"` | 对象 key 前缀，格式：`{prefix}/{imageID}` |
 | `DefaultTokenTTL` | 否 | `30m` | 访问 Token 默认有效期 |
-| `PresignTTL` | 否 | `5m` | KS3 预签名 URL 有效期，建议短于 TokenTTL |
+| `PresignTTL` | 否 | `5m` | 预签名 URL 有效期，建议短于 TokenTTL |
 | `AllowedMimeTypes` | 否 | 所有 `image/*` | MIME 类型白名单 |

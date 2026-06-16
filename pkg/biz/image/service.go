@@ -11,33 +11,55 @@ import (
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/gofrs/uuid"
+	"github.com/liukunxin/go-infra/pkg/infra/objstore"
 )
 
 // Service is the image business service.
 //
-// Construct with NewService. Inject an ObjectStore (use NewKS3Store for KS3-backed storage)
-// and an optional MetaStorage for persisting image metadata to a database.
+// Construct with NewService. The objstore client must be initialized via objstore.Init
+// before calling any method, or pass a custom *objstore.Client via WithClient option.
 type Service struct {
 	cfg    Config
-	obj    ObjectStore
+	store  *objstore.Client
 	meta   MetaStorage // nil disables metadata persistence
 	signer *signer
 }
 
-// NewService creates an image service. cfg.SignSecret must not be empty.
-func NewService(cfg Config, obj ObjectStore, meta MetaStorage) (*Service, error) {
+// NewService creates an image service.
+// cfg.SignSecret and cfg.Bucket must not be empty.
+// If no WithClient option is provided, the global objstore.GetClient() is used.
+func NewService(cfg Config, meta MetaStorage, opts ...ServiceOption) (*Service, error) {
 	sg, err := newSigner(cfg.SignSecret)
 	if err != nil {
 		return nil, err
 	}
-	return &Service{cfg: cfg, obj: obj, meta: meta, signer: sg}, nil
+	if cfg.Bucket == "" {
+		return nil, errors.New("image: bucket must not be empty")
+	}
+
+	s := &Service{cfg: cfg, meta: meta, signer: sg}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if s.store == nil {
+		s.store = objstore.GetClient()
+	}
+	return s, nil
+}
+
+// ServiceOption configures the image Service.
+type ServiceOption func(*Service)
+
+// WithClient injects a custom objstore.Client instead of the global one.
+func WithClient(c *objstore.Client) ServiceOption {
+	return func(s *Service) { s.store = c }
 }
 
 // Upload stores an image and returns its metadata.
 //
 // MIME handling:
 //   - If MimeType is provided it is validated against Config.AllowedMimeTypes.
-	//   - If MimeType is empty up to 3072 bytes of Body are peeked to auto-detect the type;
+//   - If MimeType is empty up to 3072 bytes of Body are peeked to auto-detect the type;
 //     the full body (including the peeked bytes) is still forwarded to storage.
 //
 // When UploadRequest.MaxBytes > 0, reads exceeding that limit abort with ErrFileTooLarge.
@@ -67,9 +89,9 @@ func (s *Service) Upload(ctx context.Context, req *UploadRequest) (*Image, error
 	id := newImageID()
 	key := s.objectKey(id)
 
-	if err := s.obj.Put(ctx, key, body, PutOptions{
-		ContentType: mime,
-		Size:        req.Size,
+	if err := s.store.PutObject(ctx, s.cfg.Bucket, key, body, objstore.PutOptions{
+		ContentType:   mime,
+		ContentLength: req.Size,
 	}); err != nil {
 		return nil, fmt.Errorf("image: put object: %w", err)
 	}
@@ -83,7 +105,7 @@ func (s *Service) Upload(ctx context.Context, req *UploadRequest) (*Image, error
 	}
 	if s.meta != nil {
 		if err := s.meta.Save(ctx, img); err != nil {
-			_ = s.obj.Delete(context.Background(), key)
+			_ = s.store.DeleteObject(context.Background(), s.cfg.Bucket, key)
 			return nil, fmt.Errorf("image: save metadata: %w", err)
 		}
 	}
@@ -128,7 +150,7 @@ func (s *Service) ResolveAccessToken(ctx context.Context, token, viewerID string
 	if claims.OwnerID != "" && claims.OwnerID != viewerID {
 		return "", ErrTokenUnauthorized
 	}
-	presigned, err := s.obj.PresignGet(ctx, s.objectKey(claims.ImageID), s.cfg.presignTTL())
+	presigned, err := s.store.PresignGetURL(ctx, s.cfg.Bucket, s.objectKey(claims.ImageID), s.cfg.presignTTL())
 	if err != nil {
 		return "", fmt.Errorf("image: presign url: %w", err)
 	}
@@ -140,7 +162,7 @@ func (s *Service) ResolveAccessToken(ctx context.Context, token, viewerID string
 // so that a storage failure does not silently leave an orphaned metadata record.
 func (s *Service) Delete(ctx context.Context, imageID string) error {
 	var errs []error
-	if err := s.obj.Delete(ctx, s.objectKey(imageID)); err != nil {
+	if err := s.store.DeleteObject(ctx, s.cfg.Bucket, s.objectKey(imageID)); err != nil {
 		errs = append(errs, fmt.Errorf("image: delete object: %w", err))
 	}
 	if s.meta != nil {

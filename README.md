@@ -40,7 +40,7 @@
 | **infra** | **websocket** | WebSocket 长连接封装（心跳/重连/Hub） | [查看文档](pkg/infra/websocket/README.md) |
 | **infra** | **llm** | 大模型统一调用 SDK（多厂商协议抽象） | [查看文档](pkg/infra/llm/README.md) |
 | **infra** | **apollo** | Apollo 配置中心 | `pkg/infra/apollo/` |
-| **infra** | **ks3** | KS3 对象存储 | `pkg/infra/ks3/` |
+| **infra** | **objstore** | S3 兼容对象存储（KS3/OSS/OBS/MinIO 等） | [查看文档](pkg/infra/objstore/README.md) |
 | **biz** | **login** | 多方式登录（密码/手机/邮箱/微信）+ JWT | [查看文档](pkg/biz/login/README.md) |
 | **biz** | **account** | 账号管理与多登录方式绑定 | [查看文档](pkg/biz/account/README.md) |
 | **biz** | **pay** | 微信支付 APIv3 / 支付宝 RSA2 | [查看文档](pkg/biz/pay/README.md) |
