@@ -1,4 +1,4 @@
-package v8
+package redis
 
 import (
 	"context"
@@ -7,22 +7,24 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/go-redis/redis/v8"
+	goredis "github.com/redis/go-redis/v9"
 )
 
-// clientHolder lets us store redis.UniversalClient (an interface) in an atomic.Pointer,
+// UniversalClient 是 go-redis 的 UniversalClient 接口别名，方便外部引用。
+type UniversalClient = goredis.UniversalClient
+
+// clientHolder lets us store UniversalClient (an interface) in an atomic.Pointer,
 // which requires a concrete pointer type.
 type clientHolder struct {
-	c redis.UniversalClient
+	c UniversalClient
 }
 
 var (
-	globalClient atomic.Pointer[clientHolder] // atomic read; safe for concurrent Init + GetClient
+	globalClient atomic.Pointer[clientHolder]
 	initOnce     sync.Once
 )
 
 // Init initializes the global Redis client. Only the first call takes effect.
-// Returns an error so the caller controls failure handling instead of calling log.Fatal.
 func Init(cfg *Config) error {
 	if cfg == nil {
 		return errors.New("redis: config must not be nil")
@@ -42,7 +44,7 @@ func Init(cfg *Config) error {
 
 // GetClient returns the global client.
 // Panics if Init has not been called — this is a programming error.
-func GetClient() redis.UniversalClient {
+func GetClient() UniversalClient {
 	h := globalClient.Load()
 	if h == nil {
 		panic("redis: not initialized, call Init first")
@@ -52,7 +54,7 @@ func GetClient() redis.UniversalClient {
 
 // NewClient creates a Redis client from cfg without touching any global state.
 // Use this when you need multiple independent Redis connections.
-func NewClient(cfg *Config) (redis.UniversalClient, error) {
+func NewClient(cfg *Config) (UniversalClient, error) {
 	if cfg == nil {
 		return nil, errors.New("redis: config must not be nil")
 	}
@@ -60,24 +62,24 @@ func NewClient(cfg *Config) (redis.UniversalClient, error) {
 		return nil, errors.New("redis: at least one address is required")
 	}
 
-	var client redis.UniversalClient
+	var client UniversalClient
 
 	switch cfg.Mode {
 	case "single":
-		client = redis.NewClient(&redis.Options{
-			Addr:         cfg.Addresses[0],
-			Password:     cfg.Password,
-			PoolSize:     cfg.PoolSize,
-			MinIdleConns: cfg.MinIdleConns,
-			IdleTimeout:  cfg.IdleTimeout, // already time.Duration; do NOT multiply by time.Second
+		client = goredis.NewClient(&goredis.Options{
+			Addr:            cfg.Addresses[0],
+			Password:        cfg.Password,
+			PoolSize:        cfg.PoolSize,
+			MinIdleConns:    cfg.MinIdleConns,
+			ConnMaxIdleTime: cfg.IdleTimeout,
 		})
 	case "cluster":
-		client = redis.NewClusterClient(&redis.ClusterOptions{
-			Addrs:        cfg.Addresses,
-			Password:     cfg.Password,
-			PoolSize:     cfg.PoolSize,
-			MinIdleConns: cfg.MinIdleConns,
-			IdleTimeout:  cfg.IdleTimeout,
+		client = goredis.NewClusterClient(&goredis.ClusterOptions{
+			Addrs:           cfg.Addresses,
+			Password:        cfg.Password,
+			PoolSize:        cfg.PoolSize,
+			MinIdleConns:    cfg.MinIdleConns,
+			ConnMaxIdleTime: cfg.IdleTimeout,
 		})
 	default:
 		return nil, fmt.Errorf("redis: unsupported mode %q (want \"single\" or \"cluster\")", cfg.Mode)

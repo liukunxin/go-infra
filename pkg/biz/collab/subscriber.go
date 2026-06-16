@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/liukunxin/go-infra/pkg/base/log"
+	"github.com/redis/go-redis/v9"
 )
 
 // subscriber 实时事件订阅，基于 Redis XREAD BLOCK 长轮询。

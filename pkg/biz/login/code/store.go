@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 )
 
 var (
@@ -37,7 +37,7 @@ type redisStore struct {
 }
 
 // NewRedisStore 使用 go-redis UniversalClient 创建 CodeStore。
-// 支持单节点与集群模式，可直接传入 pkg/redis/v8 的 GetRedisClient() 返回值。
+// 支持单节点与集群模式，可直接传入 pkg/infra/redis 的 GetClient() 返回值。
 func NewRedisStore(rdb redis.UniversalClient) CodeStore {
 	return &redisStore{rdb: rdb}
 }

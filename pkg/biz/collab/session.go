@@ -2,10 +2,11 @@ package collab
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 )
 
 // sessionManager 会话生命周期管理。
@@ -72,7 +73,7 @@ func (sm *sessionManager) get(ctx context.Context, id string) (Session, error) {
 func (sm *sessionManager) isActive(ctx context.Context, id string) (bool, error) {
 	key := metaKey(sm.ns, id)
 	status, err := sm.rdb.HGet(ctx, key, "status").Result()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return false, ErrSessionNotFound
 	}
 	if err != nil {

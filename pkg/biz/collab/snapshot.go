@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/liukunxin/go-infra/pkg/base/log"
+	"github.com/redis/go-redis/v9"
 )
 
 // snapshotStore 快照的存储与加载。

@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/gofrs/uuid"
 	"github.com/liukunxin/go-infra/pkg/base/log"
+	"github.com/redis/go-redis/v9"
 )
 
 // Engine 实时协作引擎。

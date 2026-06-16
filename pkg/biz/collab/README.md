@@ -69,11 +69,11 @@ pkg/biz/collab/
 import (
     "encoding/json"
     "github.com/liukunxin/go-infra/pkg/biz/collab"
-    redisv8 "github.com/liukunxin/go-infra/pkg/infra/redis/v8"
+    iredis "github.com/liukunxin/go-infra/pkg/infra/redis"
 )
 
 // 1. 创建引擎
-engine := collab.New(redisv8.GetClient(),
+engine := collab.New(iredis.GetClient(),
     collab.WithNamespace("snapsheet"),
     collab.WithMaxSessionTTL(24*time.Hour),  // 兜底：24h 无活动自动清理
     collab.WithSnapEvery(200),
@@ -266,7 +266,7 @@ CloseSession ───→ 设置短 TTL（如 10min），到期自动清理
 4. **集群友好**：`{sid}` hash tag 保证同一 session 的操作落在同一 slot
 5. **向后兼容**：业务升级 Body 结构无需改动 SDK 版本
 6. **防泄漏**：MaxSessionTTL 兜底机制防止 Redis key 永久残留
-7. **最小依赖**：只依赖 `go-redis/v8` + `encoding/json` + 标准库 + `pkg/base/log`
+7. **最小依赖**：只依赖 `redis/go-redis/v9` + `encoding/json` + 标准库 + `pkg/base/log`
 
 ## 性能参考
 
