@@ -20,6 +20,7 @@ type optionConfig struct {
 	requireEnvFile bool
 	validate       bool
 	validateByTags bool
+	decryptor      Decryptor
 }
 
 func defaultOptionConfig() *optionConfig {

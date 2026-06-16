@@ -45,12 +45,12 @@ func Load[T any](opts ...Option) (*T, error) {
 
 	var out T
 	basePath := filepath.Join(baseDir, c.fileName+c.fileExt)
-	if err := decodeYAMLFile(basePath, &out, true); err != nil {
+	if err := decodeYAMLFile(basePath, &out, true, c.decryptor); err != nil {
 		return nil, err
 	}
 
 	envPath := filepath.Join(baseDir, fmt.Sprintf("%s.%s%s", c.fileName, resolvedEnv, c.fileExt))
-	if err := decodeYAMLFile(envPath, &out, c.requireEnvFile); err != nil {
+	if err := decodeYAMLFile(envPath, &out, c.requireEnvFile, c.decryptor); err != nil {
 		return nil, err
 	}
 
@@ -72,13 +72,20 @@ func MustLoad[T any](opts ...Option) *T {
 	return cfg
 }
 
-func decodeYAMLFile(path string, out any, required bool) error {
+func decodeYAMLFile(path string, out any, required bool, decryptor Decryptor) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) && !required {
 			return nil
 		}
 		return fmt.Errorf("config: read %q failed: %w", path, err)
+	}
+
+	if decryptor != nil {
+		data, err = decryptor.DecryptBytes(data)
+		if err != nil {
+			return fmt.Errorf("config: decrypt %q failed: %w", path, err)
+		}
 	}
 
 	if err = yaml.UnmarshalStrict(data, out); err != nil {

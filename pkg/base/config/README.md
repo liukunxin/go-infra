@@ -97,3 +97,80 @@ cfg := kconfig.MustLoad[App](kconfig.WithRegionFrom("APP_REGION"))
 - 不设 region 时行为与之前完全一致，零影响
 - 设了 region 后只读对应子目录，不继承默认 `configs/` 的任何配置
 - 各 region 目录内的文件结构与默认目录一致（`config.yml` + `config.<env>.yml`）
+
+## 配置加密
+
+对于数据库密码、API Key 等敏感配置，支持 AES-256-GCM 加密存储，运行时自动解密。
+
+### 加密格式
+
+在 YAML 配置文件中，加密值用 `ENC(...)` 标记：
+
+```yaml
+mysql:
+  host: 10.0.1.100
+  password: ENC(nonce+ciphertext的base64编码)
+redis:
+  password: ENC(...)
+```
+
+未加密的值正常透传，互不影响。
+
+### 工作流
+
+```bash
+# 1. 生成密钥
+go-infra-cli keygen
+# 输出 hex 格式的 32 字节密钥，存入环境变量
+
+# 2. 加密配置值
+go-infra-cli encrypt --key-env=CONFIG_ENCRYPT_KEY --value="MyP@ssw0rd"
+# 输出: ENC(xxxxxxx)
+
+# 3. 将 ENC(...) 写入 YAML 配置文件
+```
+
+### 运行时解密
+
+```go
+cfg := kconfig.MustLoad[App](
+    kconfig.WithDecrypt(kconfig.AESKeyFromEnv("CONFIG_ENCRYPT_KEY")),
+)
+```
+
+- 不传 `WithDecrypt` 时行为完全不变（`ENC(...)` 被当普通字符串）
+- 解密在 YAML 解析之前完成，对业务结构体完全透明
+- 密钥支持 hex（64字符）或 base64 格式
+
+### 最佳实践
+
+建议在 YAML 中对 `ENC(...)` 值加双引号，避免解密后的明文含 YAML 特殊字符（如 `#`、`{`、`[`）时破坏解析：
+
+```yaml
+# 推荐写法（安全）
+password: "ENC(xxxxxxx)"
+
+# 也可以（明文不含特殊字符时没问题）
+api_key: ENC(xxxxxxx)
+```
+
+### 密钥管理
+
+- 密钥长度：32 字节（AES-256）
+- 推荐通过 K8s Secret 或 CI/CD Secret 注入环境变量 `CONFIG_ENCRYPT_KEY`
+- 密钥绝不提交代码仓库
+- 开发环境可使用 `.env.local`（确保已被 `.gitignore` 忽略）
+
+### 自定义解密器
+
+实现 `Decryptor` 接口即可接入其他加密方案（如云 KMS）：
+
+```go
+type Decryptor interface {
+    DecryptBytes(data []byte) ([]byte, error)
+}
+
+cfg := kconfig.MustLoad[App](
+    kconfig.WithDecrypt(myKMSDecryptor),
+)
+```
