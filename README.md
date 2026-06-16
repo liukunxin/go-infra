@@ -25,7 +25,7 @@
 |------|------|------|------|
 | **base** | **log** | 高性能异步日志（支持链路追踪） | [查看文档](pkg/base/log/README.md) |
 | **base** | **trace** | 分布式链路追踪（OpenTelemetry） | [查看文档](pkg/base/trace/README.md) |
-| **base** | **config** | 通用配置加载（YAML + 环境覆盖） | [查看文档](pkg/base/config/README.md) |
+| **base** | **config** | 通用配置加载（YAML + 环境覆盖 + 加密） | [查看文档](pkg/base/config/README.md) |
 | **base** | **errors** | 统一错误处理和 HTTP 状态码封装 | [查看文档](pkg/base/errors/README.md) |
 | **base** | **env** | 环境变量与模式管理 | `pkg/base/env/` |
 | **base** | **uuid** | Snowflake / UUID ID 生成 | `pkg/base/uuid/` |
@@ -172,6 +172,30 @@ func main() {
 - ✅ **异步日志** - 基于环形队列的无锁日志系统
 - ✅ **并发安全** - 所有模块都经过并发安全验证
 - ✅ **零拷贝** - 减少不必要的内存分配和复制
+
+## 🔐 配置加密
+
+支持对敏感配置值（数据库密码、API Key 等）进行 AES-256-GCM 加密存储，运行时自动解密：
+
+```yaml
+# configs/config.prod.yml
+mysql:
+  host: 10.0.1.100
+  password: "ENC(nonce+ciphertext的base64)"
+redis:
+  password: "ENC(...)"
+```
+
+```go
+cfg := config.MustLoad[App](
+    config.WithDecrypt(config.AESKeyFromEnv("CONFIG_ENCRYPT_KEY")),
+)
+```
+
+- 不传 `WithDecrypt` 时行为完全不变，零侵入
+- 密钥通过环境变量注入，推荐 K8s Secret 管理
+- 使用 `go-infra-cli keygen / encrypt / decrypt` 命令生成密钥和加密值
+- 详见 [配置模块文档](pkg/base/config/README.md)
 
 ## 💡 最佳实践
 
