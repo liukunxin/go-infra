@@ -265,6 +265,15 @@ log.WithContext(ctx).WithFields(map[string]interface{}{
 - 性能敏感模块需要进行基准测试
 - 确保并发安全
 
+### 新增包后的同步 Checklist
+
+新增 `pkg/infra/xxx` 或 `pkg/biz/xxx` 包后，需同步更新 scaffold（否则 AI 辅助编码时不会感知到新包）：
+
+- [ ] `scaffold/skills/go-infra-reference/SKILL.md` — 包地图表格新增一行
+- [ ] `scaffold/skills/go-infra-reference/reference.md` — 补充典型用法代码示例
+- [ ] `scaffold/single-starter/.cursor/rules/11-go-infra-api.mdc` — 如该包属于默认初始化能力，同步更新
+- [ ] `scaffold/monorepo-starter/.cursor/rules/11-go-infra-api.mdc` — 同上
+
 ## 📄 许可证
 
 MIT License - 详见 [LICENSE](LICENSE) 文件
