@@ -2,11 +2,13 @@ package middlewares
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/liukunxin/go-infra/internal/consts"
 	"github.com/liukunxin/go-infra/pkg/base/log"
+	"github.com/liukunxin/go-infra/pkg/base/trace"
 	"github.com/spf13/cast"
-	"time"
 )
 
 func HttpLogRecord() gin.HandlerFunc {
@@ -42,18 +44,21 @@ func HttpLogRecord() gin.HandlerFunc {
 			latency,
 			clientIP)
 		// 打印日志
-		lg := log.WithContext(c).WithFields(
-			map[string]interface{}{
-				"time":       time.Now().Format(time.DateTime),
-				"status":     statusCode,
-				"code":       cast.ToInt32(respCode),
-				"latency":    latency,
-				"client_ip":  clientIP,
-				"method":     method,
-				"path":       path,
-				"user_agent": userAgent,
-				"body_size":  bodySize,
-			})
+		fields := map[string]interface{}{
+			"time":       time.Now().Format(time.DateTime),
+			"status":     statusCode,
+			"code":       cast.ToInt32(respCode),
+			"latency":    latency,
+			"client_ip":  clientIP,
+			"method":     method,
+			"path":       path,
+			"user_agent": userAgent,
+			"body_size":  bodySize,
+		}
+		if traceID := trace.GetTraceID(c.Request.Context()); traceID != "" {
+			fields["trace_id"] = traceID
+		}
+		lg := log.WithContext(c.Request.Context()).WithFields(fields)
 		sc := statusCode / 100
 		if sc == 5 {
 			lg.Error(logMessage)
