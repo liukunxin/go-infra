@@ -150,11 +150,11 @@ func (s *Service) ResolveAccessToken(ctx context.Context, token, viewerID string
 	if claims.OwnerID != "" && claims.OwnerID != viewerID {
 		return "", ErrTokenUnauthorized
 	}
-	presigned, err := s.store.PresignGetURL(ctx, s.cfg.Bucket, s.objectKey(claims.ImageID), s.cfg.presignTTL())
+	presigned, err := s.store.PresignGet(ctx, s.cfg.Bucket, s.objectKey(claims.ImageID), s.cfg.presignTTL())
 	if err != nil {
 		return "", fmt.Errorf("image: presign url: %w", err)
 	}
-	return presigned, nil
+	return presigned.URL, nil
 }
 
 // Delete removes the image object from storage and its metadata record.

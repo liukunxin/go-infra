@@ -16,9 +16,11 @@ import (
 
 // Client wraps an S3-compatible client with presign capabilities.
 type Client struct {
-	s3      *s3.Client
-	presign *s3.PresignClient
-	bucket  string
+	s3           *s3.Client
+	presign      *s3.PresignClient
+	bucket       string
+	endpoint     string
+	usePathStyle bool
 }
 
 type clientHolder struct {
@@ -63,6 +65,7 @@ func NewClient(cfg *Config) (*Client, error) {
 	if cfg == nil {
 		return nil, errors.New("objstore: config must not be nil")
 	}
+	cfg.Normalize()
 	if cfg.Endpoint == "" {
 		return nil, errors.New("objstore: endpoint is required")
 	}
@@ -71,9 +74,6 @@ func NewClient(cfg *Config) (*Client, error) {
 	}
 
 	region := cfg.Region
-	if region == "" {
-		region = "us-east-1"
-	}
 
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
@@ -88,7 +88,7 @@ func NewClient(cfg *Config) (*Client, error) {
 	}
 
 	opts := func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(cfg.Endpoint)
+		o.BaseEndpoint = aws.String(serviceBaseEndpoint(cfg.Endpoint))
 		o.Region = region
 		o.Credentials = credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, "")
 		o.UsePathStyle = cfg.UsePathStyle
@@ -99,10 +99,17 @@ func NewClient(cfg *Config) (*Client, error) {
 	presignClient := s3.NewPresignClient(s3Client)
 
 	return &Client{
-		s3:      s3Client,
-		presign: presignClient,
-		bucket:  cfg.Bucket,
+		s3:           s3Client,
+		presign:      presignClient,
+		bucket:       cfg.Bucket,
+		endpoint:     cfg.Endpoint,
+		usePathStyle: cfg.UsePathStyle,
 	}, nil
+}
+
+// DefaultBucket returns the bucket configured at client creation time.
+func (c *Client) DefaultBucket() string {
+	return c.bucket
 }
 
 // resolveBucket returns the explicit bucket if non-empty, otherwise falls back to

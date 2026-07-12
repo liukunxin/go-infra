@@ -1,90 +1,65 @@
 # ObjStore - 统一对象存储
 
-基于 [aws-sdk-go-v2](https://github.com/aws/aws-sdk-go-v2) 的 S3 兼容对象存储封装，一套代码支持所有 S3 兼容厂商。
+基于 [aws-sdk-go-v2](https://github.com/aws/aws-sdk-go-v2) 的 S3 兼容对象存储封装。
 
-## 支持的厂商
+## API 一览
 
-| 厂商 | Endpoint 示例 | UsePathStyle |
-|------|---------------|--------------|
-| 金山云 KS3 | `ks3-cn-beijing.ksyuncs.com` | false |
-| 阿里云 OSS | `oss-cn-hangzhou.aliyuncs.com` | false |
-| 华为云 OBS | `obs.cn-north-4.myhuaweicloud.com` | false |
-| 腾讯云 COS | `cos.ap-guangzhou.myqcloud.com` | false |
-| AWS S3 | `s3.amazonaws.com` | false |
-| MinIO | `minio.example.com:9000` | true |
+| 场景 | 方法 |
+|------|------|
+| 服务端上传 | `PutObject(ctx, bucket, key, body, PutOptions)` |
+| 服务端下载 | `GetObject` |
+| 服务端元信息 | `HeadObject` |
+| 服务端删除 | `DeleteObject` |
+| 客户端上传 | `PresignPut` → `PresignedRequest` |
+| 客户端下载（私有） | `PresignGet` → `PresignedRequest` |
+| 公有直链 | `ObjectURL`（对象须 `public-read`） |
 
-## 快速上手
-
-### 配置
-
-```yaml
-objstore:
-  endpoint: "ks3-cn-beijing.ksyuncs.com"
-  region: "cn-beijing"
-  access_key: "your-ak"
-  secret_key: "your-sk"
-  bucket: "my-bucket"
-  use_path_style: false
-```
-
-### 初始化
+## PresignedRequest
 
 ```go
-import "github.com/liukunxin/go-infra/pkg/infra/objstore"
-
-if err := objstore.Init(&cfg.ObjStore); err != nil {
-    log.Fatalf("objstore init: %v", err)
+type PresignedRequest struct {
+    URL             string
+    Method          string            // GET 或 PUT
+    RequiredHeaders map[string]string // 客户端必须原样携带
 }
 ```
 
-### 使用
+## 预签名上传（含 ACL）
 
 ```go
-client := objstore.GetClient()
-
-// 上传
-err := client.PutObject(ctx, "", "path/to/file.pdf", reader, objstore.PutOptions{
-    ContentType: "application/pdf",
+req, err := client.PresignPut(ctx, "", key, time.Hour, objstore.PresignPutOptions{
+    ACL: "public-read",
 })
-
-// 下载
-body, err := client.GetObject(ctx, "", "path/to/file.pdf")
-defer body.Close()
-
-// 删除
-err := client.DeleteObject(ctx, "", "path/to/file.pdf")
-
-// 生成预签名下载 URL（10分钟有效）
-url, err := client.PresignGetURL(ctx, "", "path/to/file.pdf", 10*time.Minute)
-
-// 生成预签名上传 URL（1小时有效）
-url, err := client.PresignPutURL(ctx, "", "path/to/file.pdf", time.Hour)
+// PUT req.URL + req.RequiredHeaders（含 x-amz-acl）
 ```
 
-> bucket 参数传空字符串时使用 Config 中配置的默认 bucket。
-
-### 多实例
+## 预签名下载（私有对象）
 
 ```go
-// 需要连接多个存储时，直接创建独立 Client
-client, err := objstore.NewClient(&objstore.Config{
-    Endpoint:  "obs.cn-north-4.myhuaweicloud.com",
-    Region:    "cn-north-4",
-    AccessKey: "...",
-    SecretKey: "...",
-    Bucket:    "another-bucket",
-})
+req, err := client.PresignGet(ctx, "", key, 10*time.Minute)
+// GET req.URL
 ```
 
-## 从 ks3 包迁移
+## 公有直链
 
-| 旧（ks3） | 新（objstore） |
-|-----------|----------------|
-| `ks3.Init(cfg)` | `objstore.Init(cfg)` |
-| `ks3.GetObject(ctx, bucket, key)` | `client.GetObject(ctx, bucket, key)` |
-| `ks3.PutObject(ctx, bucket, key, body, opts)` | `client.PutObject(ctx, bucket, key, body, opts)` |
-| `ks3.DeleteObject(ctx, bucket, key)` | `client.DeleteObject(ctx, bucket, key)` |
-| `ks3.PresignGetURL(ctx, bucket, key, ttl)` | `client.PresignGetURL(ctx, bucket, key, ttl)` |
-| `ks3.PresignPutURL(ctx, bucket, key, ttl)` | `client.PresignPutURL(ctx, bucket, key, ttl)` |
+```go
+url := client.ObjectURL("", key)
+```
 
-主要变化：操作方法从包级函数改为 Client 方法，支持多实例场景。
+## 配置
+
+```go
+cfg := &objstore.Config{Endpoint: "https://ks3-cn-beijing.ksyun.com", ...}
+cfg.Normalize()
+client, err := objstore.NewClient(cfg)
+```
+
+## ACL 常量
+
+`ObjectACLPublicRead`、`ObjectACLPrivate`、`ObjectACLBucketOwnerFullControl` 等。
+
+`NormalizeObjectACL` / `IsPublicObjectACL` 用于业务层判断。
+
+## 错误
+
+`errors.Is(err, objstore.ErrInvalidArgument)`
