@@ -85,6 +85,42 @@ func TestObjectURLClient(t *testing.T) {
 	}
 }
 
+func TestPublicURLClient(t *testing.T) {
+	c := &Client{
+		bucket:        "uf-docer",
+		endpoint:      "ks3-cn-beijing.ksyun.com",
+		publicBaseURL: "https://cdn.example.com",
+	}
+	got := c.PublicURL("", "wps_study_assistant/a b.pdf")
+	want := "https://cdn.example.com/wps_study_assistant/a%20b.pdf"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+
+	c.publicBaseURL = ""
+	got = c.PublicURL("", "wps_study_assistant/a.pdf")
+	want = "https://uf-docer.ks3-cn-beijing.ksyun.com/wps_study_assistant/a.pdf"
+	if got != want {
+		t.Fatalf("fallback got %q want %q", got, want)
+	}
+}
+
+func TestJoinKey(t *testing.T) {
+	if got := JoinKey("wps_study_assistant", "images", "a.png"); got != "wps_study_assistant/images/a.png" {
+		t.Fatalf("got %q", got)
+	}
+	if got := JoinKey("", "images", "a.png"); got != "images/a.png" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestConfigObjectKey(t *testing.T) {
+	cfg := &Config{KeyPrefix: "wps_study_assistant"}
+	if got := cfg.ObjectKey("source_upload", "u1", "f.pdf"); got != "wps_study_assistant/source_upload/u1/f.pdf" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestValidateObjectKey(t *testing.T) {
 	if err := validateObjectKey(""); err == nil {
 		t.Fatal("expected error for empty key")

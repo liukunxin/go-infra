@@ -20,12 +20,14 @@ const (
 // Works with any S3-compatible provider (AWS S3, Aliyun OSS, Huawei OBS, KS3, MinIO, etc.)
 // by setting the appropriate Endpoint.
 type Config struct {
-	Endpoint     string `yaml:"endpoint" json:"endpoint"`
-	Region       string `yaml:"region" json:"region"`
-	AccessKey    string `yaml:"access_key" json:"access_key"`
-	SecretKey    string `yaml:"secret_key" json:"secret_key"`
-	Bucket       string `yaml:"bucket" json:"bucket"`
-	UsePathStyle bool   `yaml:"use_path_style" json:"use_path_style"`
+	Endpoint      string `yaml:"endpoint" json:"endpoint"`
+	Region        string `yaml:"region" json:"region"`
+	AccessKey     string `yaml:"access_key" json:"access_key"`
+	SecretKey     string `yaml:"secret_key" json:"secret_key"`
+	Bucket        string `yaml:"bucket" json:"bucket"`
+	UsePathStyle  bool   `yaml:"use_path_style" json:"use_path_style"`
+	KeyPrefix     string `yaml:"key_prefix" json:"key_prefix"`           // optional tenant/app prefix for object keys
+	PublicBaseURL string `yaml:"public_base_url" json:"public_base_url"` // optional CDN/custom domain for PublicURL
 }
 
 // Normalize trims whitespace and removes URL schemes from Endpoint.
@@ -39,9 +41,19 @@ func (c *Config) Normalize() {
 	c.AccessKey = strings.TrimSpace(c.AccessKey)
 	c.SecretKey = strings.TrimSpace(c.SecretKey)
 	c.Bucket = strings.TrimSpace(c.Bucket)
+	c.KeyPrefix = strings.Trim(strings.TrimSpace(c.KeyPrefix), "/")
+	c.PublicBaseURL = strings.TrimSuffix(strings.TrimSpace(c.PublicBaseURL), "/")
 	if c.Region == "" {
 		c.Region = DefaultRegion
 	}
+}
+
+// ObjectKey joins KeyPrefix with path segments into a single object key.
+func (c *Config) ObjectKey(parts ...string) string {
+	if c == nil {
+		return JoinKey("", parts...)
+	}
+	return JoinKey(c.KeyPrefix, parts...)
 }
 
 // PutOptions carries optional parameters for PutObject.

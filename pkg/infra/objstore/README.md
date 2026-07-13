@@ -13,6 +13,7 @@
 | 客户端上传 | `PresignPut` → `PresignedRequest` |
 | 客户端下载（私有） | `PresignGet` → `PresignedRequest` |
 | 公有直链 | `ObjectURL`（对象须 `public-read`） |
+| 对外 URL（CDN） | `PublicURL`（优先 `public_base_url`，否则同 `ObjectURL`） |
 
 ## PresignedRequest
 
@@ -40,16 +41,23 @@ req, err := client.PresignGet(ctx, "", key, 10*time.Minute)
 // GET req.URL
 ```
 
-## 公有直链
+## 公有直链 / CDN
 
 ```go
-url := client.ObjectURL("", key)
+url := client.ObjectURL("", key)  // bucket.endpoint 直链
+url := client.PublicURL("", key)  // 配置了 public_base_url 时走 CDN
+key := cfg.ObjectKey("images", fileName) // key_prefix + 路径段
 ```
 
 ## 配置
 
 ```go
-cfg := &objstore.Config{Endpoint: "https://ks3-cn-beijing.ksyun.com", ...}
+cfg := &objstore.Config{
+    Endpoint:      "https://ks3-cn-beijing.ksyun.com",
+    KeyPrefix:     "my_app",
+    PublicBaseURL: "https://cdn.example.com", // 可选
+    ...
+}
 cfg.Normalize()
 client, err := objstore.NewClient(cfg)
 ```

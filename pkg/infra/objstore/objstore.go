@@ -16,11 +16,12 @@ import (
 
 // Client wraps an S3-compatible client with presign capabilities.
 type Client struct {
-	s3           *s3.Client
-	presign      *s3.PresignClient
-	bucket       string
-	endpoint     string
-	usePathStyle bool
+	s3            *s3.Client
+	presign       *s3.PresignClient
+	bucket        string
+	endpoint      string
+	usePathStyle  bool
+	publicBaseURL string
 }
 
 type clientHolder struct {
@@ -99,11 +100,12 @@ func NewClient(cfg *Config) (*Client, error) {
 	presignClient := s3.NewPresignClient(s3Client)
 
 	return &Client{
-		s3:           s3Client,
-		presign:      presignClient,
-		bucket:       cfg.Bucket,
-		endpoint:     cfg.Endpoint,
-		usePathStyle: cfg.UsePathStyle,
+		s3:            s3Client,
+		presign:       presignClient,
+		bucket:        cfg.Bucket,
+		endpoint:      cfg.Endpoint,
+		usePathStyle:  cfg.UsePathStyle,
+		publicBaseURL: cfg.PublicBaseURL,
 	}, nil
 }
 
