@@ -29,7 +29,8 @@
 | **base** | **errors** | 统一错误处理和 HTTP 状态码封装 | [查看文档](pkg/base/errors/README.md) |
 | **base** | **env** | 环境变量与模式管理 | `pkg/base/env/` |
 | **base** | **uuid** | Snowflake / UUID ID 生成 | `pkg/base/uuid/` |
-| **base** | **xutil** | 通用泛型工具函数 | `pkg/base/xutil/` |
+| **base** | **datetime** | API JSON 时间类型（`2006-01-02 15:04:05`） | `pkg/base/datetime/` |
+| **base** | **xutil** | 通用泛型工具函数（含日/周/月区间计算） | `pkg/base/xutil/` |
 | **infra** | **mysql** | MySQL/GORM 客户端（连接池管理） | [查看文档](pkg/infra/mysql/README.md) |
 | **infra** | **redis** | Redis 客户端（单机/集群） | [查看文档](pkg/infra/redis/README.md) |
 | **infra** | **milvus** | Milvus 向量数据库客户端（连接池） | [查看文档](pkg/infra/milvus/README.md) |

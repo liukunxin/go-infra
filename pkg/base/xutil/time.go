@@ -57,6 +57,5 @@ func MonthIntervalTime(mon int) (startTime, endTime time.Time) {
 	thisMonth := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
 	startTime = thisMonth.AddDate(0, mon, 0)
 	endTime = thisMonth.AddDate(0, mon+1, -1).Add(24 * time.Hour).Add(-1 * time.Second)
-	CurrentMonthLeftTime()
 	return startTime, endTime
 }
