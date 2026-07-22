@@ -31,6 +31,7 @@ type Config struct {
 	TLSHandshakeTimeout  time.Duration    `yaml:"tls_handshake_timeout"   json:"tls_handshake_timeout"`    // TLS handshake timeout, default 10s
 	MaxResponseBodyBytes int64             `yaml:"max_response_body_bytes" json:"max_response_body_bytes"` // response body read limit, default 32 MB; 0 = use default
 	DefaultHeaders       map[string]string `yaml:"default_headers"         json:"default_headers"`         // headers applied to every request; per-request options override
+	MetricsEnabled       bool              `yaml:"metrics_enabled"         json:"metrics_enabled"`         // record outbound request metrics when true
 }
 
 func (c Config) normalized() Config {
@@ -60,6 +61,7 @@ type Client struct {
 	httpClient           *http.Client
 	maxResponseBodyBytes int64
 	defaultHeaders       http.Header // immutable after construction; never mutated at request time
+	metricsEnabled       bool
 }
 
 // NewClient creates an HTTP client with a connection pool. Zero-value Config fields
@@ -96,12 +98,13 @@ func NewClient(cfg Config) *Client {
 		},
 		maxResponseBodyBytes: cfg.MaxResponseBodyBytes,
 		defaultHeaders:       defaultHeaders,
+		metricsEnabled:       cfg.MetricsEnabled,
 	}
 }
 
 // HTTPClient returns the underlying *http.Client, useful for injecting into
 // third-party modules that require a raw client (e.g. pkg/pay).
-// Note: DefaultHeaders / X-Request-ID auto-bind / RequestOption are only applied by
+// Note: DefaultHeaders / X-Request-ID auto-bind / RequestOption / metrics are only applied by
 // Client methods (Get/Post/.../Do), not by the raw *http.Client.
 func (c *Client) HTTPClient() *http.Client {
 	if c == nil {
@@ -182,8 +185,9 @@ func (c *Client) Do(req *http.Request, opts ...RequestOption) ([]byte, int, erro
 	if c == nil {
 		return nil, 0, ErrNilClient
 	}
-	c.applyRequestMeta(req, applyOptions(opts))
-	return c.do(req)
+	cfg := applyOptions(opts)
+	c.applyRequestMeta(req, cfg)
+	return c.do(req, cfg.metricPath)
 }
 
 func (c *Client) doMethod(ctx context.Context, method, url string, body io.Reader, opts ...RequestOption) ([]byte, int, error) {
@@ -194,8 +198,9 @@ func (c *Client) doMethod(ctx context.Context, method, url string, body io.Reade
 	if err != nil {
 		return nil, 0, err
 	}
-	c.applyRequestMeta(req, applyOptions(opts))
-	return c.do(req)
+	cfg := applyOptions(opts)
+	c.applyRequestMeta(req, cfg)
+	return c.do(req, cfg.metricPath)
 }
 
 // applyRequestMeta merges default headers and per-request options, then binds
@@ -226,9 +231,11 @@ func (c *Client) applyRequestMeta(req *http.Request, cfg requestConfig) {
 	}
 }
 
-func (c *Client) do(req *http.Request) ([]byte, int, error) {
+func (c *Client) do(req *http.Request, metricPath string) ([]byte, int, error) {
+	start := time.Now()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		c.observe(req, metricPath, 0, start)
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
@@ -236,6 +243,7 @@ func (c *Client) do(req *http.Request) ([]byte, int, error) {
 	// HEAD responses have no body — drain without retaining bytes.
 	if req.Method == http.MethodHead {
 		_, _ = io.Copy(io.Discard, resp.Body)
+		c.observe(req, metricPath, resp.StatusCode, start)
 		return nil, resp.StatusCode, nil
 	}
 
@@ -243,15 +251,29 @@ func (c *Client) do(req *http.Request) ([]byte, int, error) {
 	limit := c.maxResponseBodyBytes
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
+		c.observe(req, metricPath, resp.StatusCode, start)
 		return nil, resp.StatusCode, err
 	}
 	if int64(len(respBody)) > limit {
 		// Do not drain the remainder: a huge/malicious body would still be fully
 		// downloaded. Closing without reading drops the connection from the pool,
 		// which is the safer trade-off here.
+		c.observe(req, metricPath, resp.StatusCode, start)
 		return nil, resp.StatusCode, ErrResponseBodyTooLarge
 	}
+	c.observe(req, metricPath, resp.StatusCode, start)
 	return respBody, resp.StatusCode, nil
+}
+
+func (c *Client) observe(req *http.Request, metricPath string, status int, start time.Time) {
+	if !c.metricsEnabled {
+		return
+	}
+	ctx := context.Background()
+	if req != nil {
+		ctx = req.Context()
+	}
+	recordClientMetrics(ctx, req, metricPath, status, time.Since(start))
 }
 
 func bodyReader(body []byte) io.Reader {

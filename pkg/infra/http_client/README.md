@@ -7,6 +7,7 @@
 - ✅ 可配置超时、连接池、TLS 握手、响应体大小上限
 - ✅ 客户端默认 Header + 单次请求 `WithHeader` / `WithHeaders`
 - ✅ 自动把 ctx 中的 TraceID 写入 `X-Request-ID`（有则写，无则跳过；用户显式设置优先）
+- ✅ 可选出站 metrics（`MetricsEnabled` + `WithMetricPath`），不改动 `metrics` 包
 - ✅ 可选进程级单例：`Init` + `GetHTTPClient`
 - ✅ `HTTPClient()` / `Transport()` 暴露标准库能力，便于注入与长连接复用连接池
 - ✅ `DoRequest` 支持自定义 Method 与 `io.Reader` body，避免多余拷贝
@@ -62,6 +63,33 @@ c.Get(ctx, url,
 )
 ```
 
+### 出站 Metrics（可选）
+
+默认关闭。开启后由本包通过 OTel Meter 上报（进程需已 `metrics.Init`），**不修改** `pkg/infra/metrics`。
+
+```go
+c := http_client.NewClient(http_client.Config{
+    MetricsEnabled: true,
+})
+
+// 真实 URL 可带 ID；指标 path 必须用模板，禁止 /users/1001/orders
+_, _, _ = c.Get(ctx, "https://api.example.com/users/1001/orders",
+    http_client.WithMetricPath("/users/:id/orders"),
+)
+```
+
+| 指标 | 说明 |
+|------|------|
+| `http_client_requests_total` | 出站请求次数 |
+| `http_client_request_duration_seconds` | 出站耗时（含读 body） |
+
+标签：`method`、`host`、`path`、`status`（网络错误为 `0`）。
+
+`path` 规则：
+
+1. 传了 `WithMetricPath` → 用模板（如 `/users/:id/orders`）
+2. 未传 → 用真实 URL path；**若某一 path 段为纯数字**（如 `1001`）→ `unknown`（`/api/v1/ping` 会保留，因为 `v1` 不是纯数字）
+
 ### 进程内单例
 
 ```go
@@ -105,6 +133,7 @@ streamCl := &http.Client{Transport: transport, Timeout: 0} // 流式长连接
 | `TLSHandshakeTimeout` | TLS 握手超时（默认 10s） |
 | `MaxResponseBodyBytes` | 响应体读取上限（默认 32MB；超出返回 `ErrResponseBodyTooLarge`） |
 | `DefaultHeaders` | 每个请求默认 Header；单次 `RequestOption` 可覆盖 |
+| `MetricsEnabled` | 是否上报出站请求 metrics（默认 false） |
 
 ## RequestOption
 
@@ -114,6 +143,7 @@ streamCl := &http.Client{Transport: transport, Timeout: 0} // 流式长连接
 | `WithHeaders(map)` | 批量设置 Header |
 | `WithContentType(ct)` | 设置 Content-Type |
 | `WithJSON()` | `Content-Type: application/json` |
+| `WithMetricPath(path)` | 显式指定 metrics path 模板；未传则用真实 path（纯数字段则为 `unknown`） |
 
 Header 应用顺序：`DefaultHeaders` → 请求 Option → 自动 `X-Request-ID`（仅当该头仍为空且 ctx 有 TraceID）。
 
@@ -128,4 +158,5 @@ Header 应用顺序：`DefaultHeaders` → 请求 Option → 自动 `X-Request-I
 
 - `pkg/infra/http_client/client.go`
 - `pkg/infra/http_client/option.go`
+- `pkg/infra/http_client/metrics.go`
 - `pkg/infra/http_client/init.go`

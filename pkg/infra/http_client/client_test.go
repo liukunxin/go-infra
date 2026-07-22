@@ -5,8 +5,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
+	"go.opentelemetry.io/otel"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
@@ -159,5 +163,139 @@ func TestResponseBodyTooLarge(t *testing.T) {
 	}
 	if body != nil {
 		t.Fatalf("body should be nil on too-large, got %q", body)
+	}
+}
+
+func TestMetricsRecordsTemplatePath(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	otel.SetMeterProvider(mp)
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+
+	// Reset sync.Once so instruments bind to this test MeterProvider.
+	clientMetricsOnce = sync.Once{}
+	clientRequestsTotal = nil
+	clientDurationSeconds = nil
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`ok`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{MetricsEnabled: true})
+	_, _, err := c.Get(context.Background(), srv.URL+"/users/1001/orders",
+		WithMetricPath("/users/:id/orders"),
+	)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	path, status := collectClientRequestLabels(t, reader)
+	if path != "/users/:id/orders" {
+		t.Fatalf("path label = %q, want /users/:id/orders", path)
+	}
+	if status != 200 {
+		t.Fatalf("status label = %d, want 200", status)
+	}
+}
+
+func TestMetricsFallsBackToRealPathWithoutDigits(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	otel.SetMeterProvider(mp)
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+
+	clientMetricsOnce = sync.Once{}
+	clientRequestsTotal = nil
+	clientDurationSeconds = nil
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{MetricsEnabled: true})
+	// v1 is not a pure-digit segment, so the real path is kept.
+	_, _, err := c.Get(context.Background(), srv.URL+"/api/v1/ping")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	path, _ := collectClientRequestLabels(t, reader)
+	if path != "/api/v1/ping" {
+		t.Fatalf("path label = %q, want /api/v1/ping", path)
+	}
+}
+
+func TestMetricsUnknownWhenPathHasDigits(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	otel.SetMeterProvider(mp)
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+
+	clientMetricsOnce = sync.Once{}
+	clientRequestsTotal = nil
+	clientDurationSeconds = nil
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{MetricsEnabled: true})
+	_, _, err := c.Get(context.Background(), srv.URL+"/users/1001/orders")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	path, _ := collectClientRequestLabels(t, reader)
+	if path != metricPathUnknown {
+		t.Fatalf("path label = %q, want %q", path, metricPathUnknown)
+	}
+}
+
+func collectClientRequestLabels(t *testing.T, reader *sdkmetric.ManualReader) (path string, status int64) {
+	t.Helper()
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != "http_client_requests_total" {
+				continue
+			}
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			if !ok {
+				t.Fatalf("unexpected data type %T", m.Data)
+			}
+			if len(sum.DataPoints) == 0 {
+				t.Fatal("no data points")
+			}
+			for _, kv := range sum.DataPoints[0].Attributes.ToSlice() {
+				switch string(kv.Key) {
+				case "path":
+					path = kv.Value.AsString()
+				case "status":
+					status = kv.Value.AsInt64()
+				}
+			}
+			return path, status
+		}
+	}
+	t.Fatal("http_client_requests_total not found")
+	return "", 0
+}
+
+func TestMetricsDisabledNoOp(t *testing.T) {
+	c := NewClient(Config{MetricsEnabled: false})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	_, _, err := c.Get(context.Background(), srv.URL, WithMetricPath("/ping"))
+	if err != nil {
+		t.Fatalf("Get: %v", err)
 	}
 }
