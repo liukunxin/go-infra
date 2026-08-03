@@ -3,7 +3,6 @@ package core
 import (
 	"fmt"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -52,7 +51,8 @@ type Logger struct {
 	head    uint64 // next slot to consume (consumer only)
 
 	done   chan struct{}
-	closed uint32 // CAS: 0 → 1 on Close
+	wakeup chan struct{} // buffered 1; wakes idle consumer without busy-poll
+	closed uint32        // CAS: 0 → 1 on Close
 
 	// defaultFields are global fields set once (e.g. service name, version).
 	// Stored as pointer-to-map for lock-free atomic swap.
@@ -70,6 +70,7 @@ func NewLogger(level int, provider Provider, formatter Formatter, bufferSize int
 		capMask: capacity - 1,
 		slots:   make([]ringSlot, capacity),
 		done:    make(chan struct{}),
+		wakeup:  make(chan struct{}, 1),
 	}
 	l.provider.Store(&provider)
 	l.formatter.Store(&formatter)
@@ -95,6 +96,12 @@ func (l *Logger) SetLevel(level int) { atomic.StoreInt32(&l.level, int32(level))
 
 // GetLevel returns the current minimum log level.
 func (l *Logger) GetLevel() int { return int(atomic.LoadInt32(&l.level)) }
+
+// Enabled reports whether an entry at the given level would be logged.
+// Callers should use this before expensive formatting (Sprintf / Caller).
+func (l *Logger) Enabled(level int) bool {
+	return level >= int(atomic.LoadInt32(&l.level))
+}
 
 // SetFormatter atomically replaces the formatter.
 func (l *Logger) SetFormatter(f Formatter) { l.formatter.Store(&f) }
@@ -125,7 +132,7 @@ func (l *Logger) WithFields(fields map[string]interface{}) *Logger {
 // fields may be nil. The map must be a copy owned by the caller; it must not be modified after
 // this call returns.
 func (l *Logger) Log(level int, msg string, traceId, spanId string, fields map[string]interface{}) {
-	if level < int(atomic.LoadInt32(&l.level)) {
+	if !l.Enabled(level) {
 		return
 	}
 	e := entryPool.Get().(*logEntry)
@@ -144,36 +151,40 @@ func (l *Logger) Log(level int, msg string, traceId, spanId string, fields map[s
 
 // Output formats msg with optional args and includes caller file/line information.
 func (l *Logger) Output(callDepth int, level int, format string, args ...interface{}) {
+	if !l.Enabled(level) {
+		return
+	}
 	msg := format
 	if len(args) > 0 {
 		msg = fmt.Sprintf(format, args...)
 	}
 	if callDepth > 0 {
-		if pc, file, line, ok := runtime.Caller(callDepth); ok {
-			fn := runtime.FuncForPC(pc)
-			caller := shortFile(file) + fmt.Sprintf(":%d", line)
-			if fn != nil {
-				caller = shortFunc(fn.Name()) + " " + caller
-			}
-			msg = caller + " " + msg
-		}
+		msg = prependCaller(callDepth, msg)
 	}
 	l.Log(level, msg, "", "", nil)
 }
 
 // OutputMsg is like Output but skips format-string expansion.
 func (l *Logger) OutputMsg(callDepth int, level int, msg string) {
+	if !l.Enabled(level) {
+		return
+	}
 	if callDepth > 0 {
-		if pc, file, line, ok := runtime.Caller(callDepth); ok {
-			fn := runtime.FuncForPC(pc)
-			caller := shortFile(file) + fmt.Sprintf(":%d", line)
-			if fn != nil {
-				caller = shortFunc(fn.Name()) + " " + caller
-			}
-			msg = caller + " " + msg
-		}
+		msg = prependCaller(callDepth, msg)
 	}
 	l.Log(level, msg, "", "", nil)
+}
+
+func prependCaller(callDepth int, msg string) string {
+	if pc, file, line, ok := runtime.Caller(callDepth); ok {
+		fn := runtime.FuncForPC(pc)
+		caller := shortFile(file) + fmt.Sprintf(":%d", line)
+		if fn != nil {
+			caller = shortFunc(fn.Name()) + " " + caller
+		}
+		return caller + " " + msg
+	}
+	return msg
 }
 
 // Close signals the consumer to stop after draining all buffered entries and waits for it.
@@ -181,7 +192,20 @@ func (l *Logger) Close() {
 	if !atomic.CompareAndSwapUint32(&l.closed, 0, 1) {
 		return
 	}
-	<-l.done // park until consumer goroutine exits cleanly
+	l.signal() // wake idle consumer so it can observe closed and exit
+	<-l.done   // park until consumer goroutine exits cleanly
+
+	if pvdPtr := l.provider.Load(); pvdPtr != nil && *pvdPtr != nil {
+		_ = (*pvdPtr).Close()
+	}
+}
+
+// signal wakes the consumer if it is waiting. Non-blocking; coalesces under load.
+func (l *Logger) signal() {
+	select {
+	case l.wakeup <- struct{}{}:
+	default:
+	}
 }
 
 // enqueue tries to place e into the ring buffer without blocking.
@@ -196,6 +220,7 @@ func (l *Logger) enqueue(e *logEntry) bool {
 	slot := &l.slots[t&l.capMask]
 	atomic.StorePointer(&slot.entry, unsafe.Pointer(e))
 	atomic.StoreUint32(&slot.ready, 1)
+	l.signal()
 	return true
 }
 
@@ -205,26 +230,39 @@ func (l *Logger) consumerLoop() {
 	for {
 		slot := &l.slots[l.head&l.capMask]
 
-		if atomic.LoadUint32(&slot.ready) == 0 {
-			if atomic.LoadUint32(&l.closed) == 1 {
-				l.drainRemaining()
-				close(l.done)
-				return
+		if atomic.LoadUint32(&slot.ready) != 0 {
+			p := (*logEntry)(atomic.LoadPointer(&slot.entry))
+			atomic.StorePointer(&slot.entry, nil)
+			atomic.StoreUint32(&slot.ready, 0)
+			l.head++
+			if p != nil {
+				l.writeEntry(p)
 			}
-			// Sleep briefly instead of busy-spinning to avoid wasting a CPU core
-			// when the queue is idle. 1 µs adds negligible latency for async logs.
-			time.Sleep(time.Microsecond)
 			continue
 		}
 
-		p := (*logEntry)(atomic.LoadPointer(&slot.entry))
-		atomic.StorePointer(&slot.entry, nil)
-		atomic.StoreUint32(&slot.ready, 0)
-		l.head++
-
-		if p != nil {
-			l.writeEntry(p)
+		if atomic.LoadUint32(&l.closed) == 1 {
+			l.drainRemaining()
+			close(l.done)
+			return
 		}
+
+		// Drop a coalesced wakeup (if any), then re-check ready/closed before parking.
+		// This closes the race where enqueue+signal happens after the empty check but
+		// the wakeup was coalesced away, which would otherwise leave us blocked forever.
+		select {
+		case <-l.wakeup:
+		default:
+		}
+		if atomic.LoadUint32(&slot.ready) != 0 {
+			continue
+		}
+		if atomic.LoadUint32(&l.closed) == 1 {
+			l.drainRemaining()
+			close(l.done)
+			return
+		}
+		<-l.wakeup
 	}
 }
 
@@ -311,16 +349,31 @@ func releaseEntry(e *logEntry) {
 }
 
 func shortFile(path string) string {
-	parts := strings.Split(path, "/")
-	if len(parts) <= 2 {
-		return path
+	// Keep "dir/file.go" without allocating a []string via Split.
+	slash := 0
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i] == '/' || path[i] == '\\' {
+			slash++
+			if slash == 2 {
+				return path[i+1:]
+			}
+		}
 	}
-	return strings.Join(parts[len(parts)-2:], "/")
+	return path
 }
 
 func shortFunc(name string) string {
-	if idx := strings.LastIndex(name, "/"); idx != -1 {
+	if idx := lastSlash(name); idx != -1 {
 		return name[idx+1:]
 	}
 	return name
+}
+
+func lastSlash(s string) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == '/' {
+			return i
+		}
+	}
+	return -1
 }

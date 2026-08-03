@@ -99,8 +99,12 @@ func (cl *ContextLogger) Fatalf(format string, args ...interface{}) {
 	cl.logFormat(core.LevelFatal, format, args...)
 }
 
+func (cl *ContextLogger) enabled(level int) bool {
+	return cl.l != nil && cl.l.Enabled(level)
+}
+
 func (cl *ContextLogger) logMessage(level int, msg string) {
-	if cl.l == nil {
+	if !cl.enabled(level) {
 		return
 	}
 	// extraFields is passed directly to the core logger so the formatter receives them
@@ -110,7 +114,7 @@ func (cl *ContextLogger) logMessage(level int, msg string) {
 }
 
 func (cl *ContextLogger) logFormat(level int, format string, args ...interface{}) {
-	if cl.l == nil {
+	if !cl.enabled(level) {
 		return
 	}
 	cl.logMessage(level, fmt.Sprintf(format, args...))

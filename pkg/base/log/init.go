@@ -16,7 +16,9 @@ func loadLogger() *core.Logger {
 }
 
 func storeLogger(l *core.Logger) {
-	loggerPtr.Store(l)
+	if old := loggerPtr.Swap(l); old != nil && old != l {
+		old.Close()
+	}
 }
 
 // newFormatter selects a Formatter based on cfg.Formatter ("json" → JSONFormatter, else TxtLineFormatter).
@@ -54,8 +56,7 @@ func InitWithFile(cfg Config, path string) error {
 
 // Close flushes and stops the logger. Safe to call even if Init was never called.
 func Close() {
-	l := loadLogger()
-	if l != nil {
+	if l := loggerPtr.Swap(nil); l != nil {
 		l.Close()
 	}
 }
