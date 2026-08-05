@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/liukunxin/go-infra/internal/consts"
 	"github.com/liukunxin/go-infra/pkg/base/log"
-	"github.com/liukunxin/go-infra/pkg/base/trace"
 	"github.com/spf13/cast"
 )
 
@@ -54,9 +53,6 @@ func HttpLogRecord() gin.HandlerFunc {
 			"path":       path,
 			"user_agent": userAgent,
 			"body_size":  bodySize,
-		}
-		if traceID := trace.GetTraceID(c.Request.Context()); traceID != "" {
-			fields["trace_id"] = traceID
 		}
 		lg := log.WithContext(c.Request.Context()).WithFields(fields)
 		sc := statusCode / 100
