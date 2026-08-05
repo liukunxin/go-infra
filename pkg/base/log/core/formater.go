@@ -45,11 +45,11 @@ func (f *TxtLineFormatter) Format(level int, ts time.Time, msg string, fields ma
 	buf.WriteString("] ")
 	buf.WriteString(msg)
 	if traceId != "" {
-		buf.WriteString(" traceId=")
+		buf.WriteString(" trace_id=")
 		buf.WriteString(traceId)
 	}
 	if spanId != "" {
-		buf.WriteString(" spanId=")
+		buf.WriteString(" span_id=")
 		buf.WriteString(spanId)
 	}
 	for k, v := range fields {
@@ -73,10 +73,10 @@ func (f *JSONFormatter) Format(level int, ts time.Time, msg string, fields map[s
 	data["level"] = LevelToString(level)
 	data["msg"] = msg
 	if traceId != "" {
-		data["traceId"] = traceId
+		data["trace_id"] = traceId
 	}
 	if spanId != "" {
-		data["spanId"] = spanId
+		data["span_id"] = spanId
 	}
 	for k, v := range fields {
 		data[k] = v
