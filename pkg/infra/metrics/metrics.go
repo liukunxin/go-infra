@@ -22,23 +22,30 @@ import (
 var globalMeterProvider atomic.Pointer[sdkmetric.MeterProvider]
 
 // Init initializes the OTel MeterProvider with a Prometheus exporter.
-// appName is used as the "service.name" resource attribute; falls back to the
-// APP_NAME environment variable when empty.
+// appName is stored as resource attribute app_name and promoted onto every exported
+// series as label app_name for filtering. Pass cfg.AppName from project config;
+// empty falls back to env app_name. Trace keeps its own service.name separately.
 //
 // Call RegisterGinRoutes separately to expose /metrics and attach the middleware.
 func Init(appName string, opts ...Option) error {
-	exporter, err := prometheus.New()
-	if err != nil {
-		return err
-	}
 	if appName == "" {
 		appName = os.Getenv(consts.AppName)
+	}
+
+	// Resource attrs alone only appear on target_info; promote app_name onto every series.
+	exporter, err := prometheus.New(
+		prometheus.WithResourceAsConstantLabels(
+			attribute.NewAllowKeysFilter(attribute.Key(consts.AppName)),
+		),
+	)
+	if err != nil {
+		return err
 	}
 
 	// Built-in attributes come first; user-supplied WithAttributes calls append to them.
 	allOpts := append([]Option{
 		WithReader(exporter),
-		WithAttributes(attribute.String(string(semconv.ServiceNameKey), appName)),
+		WithAttributes(attribute.String(consts.AppName, appName)),
 	}, opts...)
 
 	return initProvider(allOpts...)
@@ -55,6 +62,7 @@ func RegisterGinRoutes(router *gin.Engine) {
 
 // InitMetrics is a convenience wrapper that calls Init and RegisterGinRoutes in one step.
 // It calls log.Fatal on any initialization error to preserve the original fail-fast behaviour.
+// Pass cfg.AppName from project config so all metrics carry app_name=<your-service>.
 func InitMetrics(appName string, router *gin.Engine, opts ...Option) {
 	if err := Init(appName, opts...); err != nil {
 		log.Fatalf("metrics: init provider: %v", err)

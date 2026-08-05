@@ -26,7 +26,7 @@ import (
 func main() {
     router := gin.Default()
 
-    // 初始化 Metrics（自动注册 /metrics 路由和中间件）
+    // 初始化 Metrics（自动注册 /metrics；app_name 会出现在每条指标标签上）
     metrics.InitMetrics("my-service", router)
 
     // 业务路由
@@ -39,6 +39,12 @@ func main() {
 ```
 
 访问 `http://localhost:8080/metrics` 即可看到指标数据。
+
+所有经本包 MeterProvider 导出的指标都会自动带上 `app_name` 标签（值来自 `InitMetrics(cfg.AppName, router)` / 配置 `app_name`），便于按应用过滤。与 Trace 的 `service.name`（可配 `trace.service_name`）分开，避免两套概念混用：
+
+```
+http_requests_total{method="GET",path="/api/ping",status="200",app_name="my-service"} 1
+```
 
 ## 📋 默认指标
 
