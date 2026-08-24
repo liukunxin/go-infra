@@ -47,12 +47,12 @@ func buildObjectURL(endpoint, bucket, key string, usePathStyle bool) string {
 }
 
 func buildPublicURL(publicBaseURL, endpoint, bucket, key string, usePathStyle bool) string {
-	key = encodeObjectKey(key)
-	if key == "" {
-		return ""
-	}
-	if publicBaseURL != "" {
-		return publicBaseURL + "/" + key
+	if strings.TrimSpace(publicBaseURL) != "" {
+		encodedKey := encodeObjectKey(key)
+		if encodedKey == "" {
+			return ""
+		}
+		return strings.TrimSuffix(strings.TrimSpace(publicBaseURL), "/") + "/" + encodedKey
 	}
 	return buildObjectURL(endpoint, bucket, key, usePathStyle)
 }

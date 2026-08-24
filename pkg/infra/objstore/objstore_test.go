@@ -1,6 +1,9 @@
 package objstore
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestConfigNormalize(t *testing.T) {
 	cfg := &Config{
@@ -102,6 +105,83 @@ func TestPublicURLClient(t *testing.T) {
 	want = "https://uf-docer.ks3-cn-beijing.ksyun.com/wps_study_assistant/a.pdf"
 	if got != want {
 		t.Fatalf("fallback got %q want %q", got, want)
+	}
+
+	got = c.PublicURL("", "wps_study_assistant/a b.pdf")
+	want = "https://uf-docer.ks3-cn-beijing.ksyun.com/wps_study_assistant/a%20b.pdf"
+	if got != want {
+		t.Fatalf("fallback with space got %q want %q", got, want)
+	}
+	if strings.Contains(got, "%2520") {
+		t.Fatalf("double-encoded space in fallback URL: %q", got)
+	}
+}
+
+func TestBuildPublicURLNoDoubleEncode(t *testing.T) {
+	key := "wps_study_assistant/tmp/source_upload/1666508657790/2091856958502998016/WPS Slides Quick Start Guide(1).pdf"
+	got := buildPublicURL(
+		"",
+		"s3.us-west-2.amazonaws.com",
+		"2c-assist-svc-us-prod-study-assist",
+		key,
+		false,
+	)
+	want := "https://2c-assist-svc-us-prod-study-assist.s3.us-west-2.amazonaws.com/wps_study_assistant/tmp/source_upload/1666508657790/2091856958502998016/WPS%20Slides%20Quick%20Start%20Guide%281%29.pdf"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	if strings.Contains(got, "%2520") || strings.Contains(got, "%2528") || strings.Contains(got, "%2529") {
+		t.Fatalf("double-encoded URL: %q", got)
+	}
+}
+
+// PublicURL 在未配置 public_base_url 时应与 ObjectURL 完全一致（单次编码）。
+// 修复前 fallback 会双重 PathEscape，仅「需编码字符」的文件名会出错；纯字母数字文件名碰巧相同。
+func TestPublicURLFallbackMatchesObjectURL(t *testing.T) {
+	const (
+		endpoint = "s3.us-west-2.amazonaws.com"
+		bucket   = "my-bucket"
+	)
+	fileNames := []string{
+		"lecture.pdf",                              // 常见成功 case：无需编码
+		"simple-file_v1.0.pdf",                     // 字母数字 + .-_ 
+		"a b.pdf",                                  // 空格
+		"WPS Slides Quick Start Guide(1).pdf",      // 空格 + 括号（线上失败 case）
+		"100%complete.pdf",                         // 文件名含 %
+		"notes#draft.pdf",                          // #
+		"中文 课件.pdf",                                // 中文 + 空格
+		"file+plus.pdf",                            // +
+	}
+	for _, name := range fileNames {
+		t.Run(name, func(t *testing.T) {
+			key := "wps_study_assistant/tmp/source_upload/10001/up1/" + name
+			public := buildPublicURL("", endpoint, bucket, key, false)
+			object := buildObjectURL(endpoint, bucket, key, false)
+			if public != object {
+				t.Fatalf("PublicURL fallback must match ObjectURL\npublic=%q\nobject=%q", public, object)
+			}
+		})
+	}
+}
+
+func TestBuildPublicURLWithCDNBase(t *testing.T) {
+	key := "wps_study_assistant/a b.pdf"
+	got := buildPublicURL("https://cdn.example.com/", "ignored", "ignored", key, false)
+	want := "https://cdn.example.com/wps_study_assistant/a%20b.pdf"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	if strings.Contains(got, "%2520") {
+		t.Fatalf("CDN base must not double-encode: %q", got)
+	}
+}
+
+func TestBuildPublicURLPathStyleFallback(t *testing.T) {
+	key := "dir/a b.pdf"
+	got := buildPublicURL("", "s3.amazonaws.com", "bucket", key, true)
+	want := buildObjectURL("s3.amazonaws.com", "bucket", key, true)
+	if got != want {
+		t.Fatalf("path-style fallback got %q want %q", got, want)
 	}
 }
 
