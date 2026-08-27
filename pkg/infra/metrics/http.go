@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -9,6 +10,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
+
+var defaultHTTPSkipPaths = []string{"/health", "/metrics"}
 
 var (
 	meter              metric.Meter
@@ -42,8 +45,37 @@ func initHTTPMetrics() error {
 	return nil
 }
 
-func ginMetricsMiddleware() gin.HandlerFunc {
+func buildHTTPSkipSet(extra ...string) map[string]struct{} {
+	out := make(map[string]struct{}, len(defaultHTTPSkipPaths)+len(extra))
+	for _, p := range defaultHTTPSkipPaths {
+		out[normalizeHTTPPath(p)] = struct{}{}
+	}
+	for _, p := range extra {
+		if p = normalizeHTTPPath(p); p != "" {
+			out[p] = struct{}{}
+		}
+	}
+	return out
+}
+
+func normalizeHTTPPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return path
+}
+
+func ginMetricsMiddleware(skip map[string]struct{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if _, ok := skip[c.Request.URL.Path]; ok {
+			c.Next()
+			return
+		}
+
 		start := time.Now()
 		c.Next()
 

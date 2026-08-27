@@ -7,8 +7,9 @@ import (
 )
 
 type optionConfig struct {
-	reader     sdkmetric.Reader
-	attributes []attribute.KeyValue
+	reader         sdkmetric.Reader
+	attributes     []attribute.KeyValue
+	httpSkipPaths  []string
 }
 
 // Option 是 metrics 模块的函数式选项类型。
@@ -26,6 +27,15 @@ func WithReader(reader sdkmetric.Reader) Option {
 func WithAttributes(attributes ...attribute.KeyValue) Option {
 	return option.Func[optionConfig](func(oc *optionConfig) error {
 		oc.attributes = append(oc.attributes, attributes...)
+		return nil
+	})
+}
+
+// WithHTTPSkipPaths adds request paths excluded from http_requests_total and
+// http_request_duration_seconds. /health and /metrics are always skipped.
+func WithHTTPSkipPaths(paths ...string) Option {
+	return option.Func[optionConfig](func(oc *optionConfig) error {
+		oc.httpSkipPaths = append(oc.httpSkipPaths, paths...)
 		return nil
 	})
 }

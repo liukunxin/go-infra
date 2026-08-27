@@ -48,6 +48,32 @@ http_requests_total{method="GET",path="/api/ping",status="200",app_name="my-serv
 
 ## 📋 默认指标
 
+### 排除探针路径（HTTP 中间件）
+
+HTTP 中间件默认**不上报** `/health`、`/metrics`（避免健康检查与 Prometheus scrape 污染业务指标）。
+
+额外路径有两种配置方式，**会合并**（默认 skip 始终生效）：
+
+| 方式 | 适用场景 |
+|------|----------|
+| `metrics.WithHTTPSkipPaths(...)` 传给 `Init` / `InitMetrics` | 常规一站式初始化（**推荐**） |
+| `RegisterGinRoutes(router, "/readyz")` 的 variadic 参数 | 手动拆分 `Init` + `RegisterGinRoutes` 时 |
+
+```go
+// 推荐：与 InitMetrics 一起传入
+metrics.InitMetrics("my-service", router,
+    metrics.WithHTTPSkipPaths("/readyz", "/livez"),
+)
+
+// 或拆分调用时
+metrics.Init("my-service", metrics.WithHTTPSkipPaths("/readyz"))
+metrics.RegisterGinRoutes(router) // 已含 Option 中的路径
+
+metrics.RegisterGinRoutes(router, "/livez") // 也可在此追加
+```
+
+路径按 `Request.URL.Path` **精确匹配**（如注册为 `/health`，则 `/health/` 不会跳过）。
+
 ### HTTP 请求指标
 
 #### 1. http_requests_total

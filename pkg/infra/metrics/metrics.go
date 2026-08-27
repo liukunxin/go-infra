@@ -21,6 +21,9 @@ import (
 // The otel.MeterProvider interface does not expose Shutdown.
 var globalMeterProvider atomic.Pointer[sdkmetric.MeterProvider]
 
+// extraHTTPSkipPaths is populated by Init from WithHTTPSkipPaths options.
+var extraHTTPSkipPaths []string
+
 // Init initializes the OTel MeterProvider with a Prometheus exporter.
 // appName is stored as resource attribute app_name and promoted onto every exported
 // series as label app_name for filtering. Pass cfg.AppName from project config;
@@ -53,11 +56,13 @@ func Init(appName string, opts ...Option) error {
 
 // RegisterGinRoutes registers the /metrics scrape endpoint and attaches the
 // per-request metrics middleware to router. Must be called after Init.
-func RegisterGinRoutes(router *gin.Engine) {
+// skipPaths adds extra paths to exclude from HTTP metrics (/health and /metrics are always excluded).
+func RegisterGinRoutes(router *gin.Engine, skipPaths ...string) {
+	skip := buildHTTPSkipSet(append(extraHTTPSkipPaths, skipPaths...)...)
 	router.GET("/metrics", func(c *gin.Context) {
 		promhttp.Handler().ServeHTTP(c.Writer, c.Request)
 	})
-	router.Use(ginMetricsMiddleware())
+	router.Use(ginMetricsMiddleware(skip))
 }
 
 // InitMetrics is a convenience wrapper that calls Init and RegisterGinRoutes in one step.
@@ -95,6 +100,8 @@ func initProvider(opts ...Option) error {
 			return err
 		}
 	}
+
+	extraHTTPSkipPaths = append([]string(nil), c.httpSkipPaths...)
 
 	metricOpts := make([]sdkmetric.Option, 0, 4)
 	if c.reader != nil {
