@@ -268,12 +268,11 @@ log.WithContext(ctx).WithFields(map[string]interface{}{
 
 ### 新增包后的同步 Checklist
 
-新增 `pkg/infra/xxx` 或 `pkg/biz/xxx` 包后，需同步更新 scaffold（否则 AI 辅助编码时不会感知到新包）：
+新增 `pkg/base/xxx`、`pkg/infra/xxx` 或 `pkg/biz/xxx` 包后，需同步更新 scaffold 里的 SDK 参考规则（否则 AI 辅助编码时不会感知到新包）：
 
-- [ ] `scaffold/skills/go-infra-reference/SKILL.md` — 包地图表格新增一行
-- [ ] `scaffold/skills/go-infra-reference/reference.md` — 补充典型用法代码示例
-- [ ] `scaffold/single-starter/.cursor/rules/11-go-infra-api.mdc` — 如该包属于默认初始化能力，同步更新
-- [ ] `scaffold/monorepo-starter/.cursor/rules/11-go-infra-api.mdc` — 同上
+- [ ] `scaffold/cli/cmd/go-infra-cli/_templates/single-starter/.cursor/rules/11-go-infra-api.mdc` — 包地图表格新增一行
+- [ ] `scaffold/cli/cmd/go-infra-cli/_templates/monorepo-starter/.cursor/rules/11-go-infra-api.mdc` — 同上（两份内容必须保持一致）
+- [ ] 若该包属于默认初始化能力，同时更新同目录 `10-go-sdk-first.mdc` 的基线能力表，以及 `11-go-infra-api.mdc` 里的初始化顺序
 
 ## 📄 许可证
 
