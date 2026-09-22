@@ -15,6 +15,7 @@ import "sync"
 //	traffic.Init(traffic.WithController(ctrl))
 type CompositeController struct {
 	controllers []Controller
+	closeOnce   sync.Once
 }
 
 // NewCompositeController creates a controller that applies each sub-controller in order.
@@ -22,13 +23,24 @@ func NewCompositeController(controllers ...Controller) *CompositeController {
 	return &CompositeController{controllers: controllers}
 }
 
+// Close stops sub-controllers that implement Close(). Safe to call multiple times.
+func (c *CompositeController) Close() {
+	c.closeOnce.Do(func() {
+		for _, ctrl := range c.controllers {
+			if cl, ok := ctrl.(closer); ok {
+				cl.Close()
+			}
+		}
+	})
+}
+
 // TryPass implements Controller.
 // If any sub-controller blocks, all passes already acquired are released via Done()
 // and the BlockError from the blocking controller is returned.
-func (c *CompositeController) TryPass(resource string, opts ...TryPassOption) (Pass, BlockError) {
+func (c *CompositeController) TryPass(resource string) (Pass, BlockError) {
 	acquired := make([]Pass, 0, len(c.controllers))
 	for _, ctrl := range c.controllers {
-		pass, blockErr := ctrl.TryPass(resource, opts...)
+		pass, blockErr := ctrl.TryPass(resource)
 		if blockErr != nil {
 			// Release passes from controllers that already allowed this request.
 			for _, p := range acquired {

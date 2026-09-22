@@ -44,9 +44,9 @@ func unaryServerInterceptor(cfg ServerConfig) grpc.UnaryServerInterceptor {
 		defer span.End()
 
 		resource := buildServerTrafficResource(cfg.TrafficResourcePrefix, info.FullMethod)
-		pass, blockErr := tryTrafficPass(cfg.EnableTrafficInterceptor, resource, traffic.TrafficTypeInbound)
+		pass, blockErr := tryTrafficPass(cfg.EnableTrafficInterceptor, resource)
 		if blockErr != nil {
-			err := status.Errorf(httpStatusToCode(429), blockErr.BlockMsg())
+			err := status.Error(httpStatusToCode(traffic.HTTPStatus(blockErr.BlockType())), blockErr.BlockMsg())
 			span.RecordError(err)
 			span.SetStatus(codes.Error, blockErr.BlockMsg())
 			recordServerMetric(ctx, info.FullMethod, time.Since(start), err)
@@ -84,9 +84,9 @@ func unaryClientInterceptor(cfg ClientConfig) grpc.UnaryClientInterceptor {
 		defer span.End()
 
 		resource := buildClientTrafficResource(cfg.TrafficResource, method)
-		pass, blockErr := tryTrafficPass(cfg.EnableTrafficInterceptor, resource, traffic.TrafficTypeOutbound)
+		pass, blockErr := tryTrafficPass(cfg.EnableTrafficInterceptor, resource)
 		if blockErr != nil {
-			err := status.Errorf(httpStatusToCode(429), blockErr.BlockMsg())
+			err := status.Error(httpStatusToCode(traffic.HTTPStatus(blockErr.BlockType())), blockErr.BlockMsg())
 			span.RecordError(err)
 			span.SetStatus(codes.Error, blockErr.BlockMsg())
 			recordClientMetric(ctx, method, time.Since(start), err)
@@ -121,9 +121,9 @@ func streamServerInterceptor(cfg ServerConfig) grpc.StreamServerInterceptor {
 		defer span.End()
 
 		resource := buildServerTrafficResource(cfg.TrafficResourcePrefix, info.FullMethod)
-		pass, blockErr := tryTrafficPass(cfg.EnableTrafficInterceptor, resource, traffic.TrafficTypeInbound)
+		pass, blockErr := tryTrafficPass(cfg.EnableTrafficInterceptor, resource)
 		if blockErr != nil {
-			err := status.Errorf(httpStatusToCode(429), blockErr.BlockMsg())
+			err := status.Error(httpStatusToCode(traffic.HTTPStatus(blockErr.BlockType())), blockErr.BlockMsg())
 			span.RecordError(err)
 			span.SetStatus(codes.Error, blockErr.BlockMsg())
 			recordServerMetric(ctx, info.FullMethod, time.Since(start), err)
@@ -207,14 +207,11 @@ func buildClientTrafficResource(resource, fullMethod string) string {
 	return "grpc:client:" + fullMethod
 }
 
-func tryTrafficPass(enabled bool, resource string, typ traffic.TrafficType) (traffic.Pass, traffic.BlockError) {
+func tryTrafficPass(enabled bool, resource string) (traffic.Pass, traffic.BlockError) {
 	if !enabled {
 		return nil, nil
 	}
-	return traffic.GetController().TryPass(
-		resource,
-		traffic.NewTryPassOptions().WithTrafficType(typ),
-	)
+	return traffic.GetController().TryPass(resource)
 }
 
 type wrappedServerStream struct {

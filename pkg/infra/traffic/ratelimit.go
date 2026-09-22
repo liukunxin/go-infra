@@ -19,52 +19,89 @@ import (
 // in sentinel-golang (https://github.com/alibaba/sentinel-golang) via WithController.
 type RateLimitController struct {
 	mu       sync.Mutex
-	limiters map[string]*rate.Limiter
+	limiters map[string]*resourceLimiter
 	r        rate.Limit // tokens per second
 	b        int        // burst size
 
+	idleEvictAfter    time.Duration
+	idleEvictInterval time.Duration
+
 	stopEvict chan struct{}
+	closeOnce sync.Once
+}
+
+type resourceLimiter struct {
+	limiter    *rate.Limiter
+	lastAccess time.Time
+}
+
+// RateLimitOption configures optional RateLimitController behavior.
+type RateLimitOption func(*RateLimitController)
+
+// WithIdleEviction overrides the default idle-key eviction timings
+// (IdleEvictAfter=10m, IdleEvictInterval=1m).
+func WithIdleEviction(after, interval time.Duration) RateLimitOption {
+	return func(c *RateLimitController) {
+		if after > 0 {
+			c.idleEvictAfter = after
+		}
+		if interval > 0 {
+			c.idleEvictInterval = interval
+		}
+	}
 }
 
 // NewRateLimitController creates a controller that allows r requests per second
 // per resource, with a burst capacity of b.
 // r == rate.Inf means no limit; b must be > 0.
-// A background goroutine periodically clears the map to prevent unbounded growth.
+// A background goroutine periodically evicts idle limiters.
 // Call Close to stop it.
-func NewRateLimitController(r rate.Limit, b int) *RateLimitController {
+func NewRateLimitController(r rate.Limit, b int, opts ...RateLimitOption) *RateLimitController {
 	if b <= 0 {
 		b = 1
 	}
 	c := &RateLimitController{
-		limiters:  make(map[string]*rate.Limiter),
-		r:         r,
-		b:         b,
-		stopEvict: make(chan struct{}),
+		limiters:          make(map[string]*resourceLimiter),
+		r:                 r,
+		b:                 b,
+		idleEvictAfter:    10 * time.Minute,
+		idleEvictInterval: time.Minute,
+		stopEvict:         make(chan struct{}),
+	}
+	for _, opt := range opts {
+		opt(c)
 	}
 	go c.evictLoop()
 	return c
 }
 
-// Close stops the background eviction goroutine.
+// Close stops the background eviction goroutine. Safe to call multiple times.
 func (c *RateLimitController) Close() {
-	select {
-	case <-c.stopEvict:
-	default:
+	c.closeOnce.Do(func() {
 		close(c.stopEvict)
-	}
+	})
 }
 
 func (c *RateLimitController) evictLoop() {
-	ticker := time.NewTicker(10 * time.Minute)
+	ticker := time.NewTicker(c.idleEvictInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-c.stopEvict:
 			return
 		case <-ticker.C:
-			c.mu.Lock()
-			c.limiters = make(map[string]*rate.Limiter)
-			c.mu.Unlock()
+			c.evictIdle()
+		}
+	}
+}
+
+func (c *RateLimitController) evictIdle() {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for resource, rl := range c.limiters {
+		if now.Sub(rl.lastAccess) >= c.idleEvictAfter {
+			delete(c.limiters, resource)
 		}
 	}
 }
@@ -72,15 +109,16 @@ func (c *RateLimitController) evictLoop() {
 func (c *RateLimitController) limiterFor(resource string) *rate.Limiter {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if l, ok := c.limiters[resource]; ok {
-		return l
+	if rl, ok := c.limiters[resource]; ok {
+		rl.lastAccess = time.Now()
+		return rl.limiter
 	}
 	l := rate.NewLimiter(c.r, c.b)
-	c.limiters[resource] = l
+	c.limiters[resource] = &resourceLimiter{limiter: l, lastAccess: time.Now()}
 	return l
 }
 
-func (c *RateLimitController) TryPass(resource string, opts ...TryPassOption) (Pass, BlockError) {
+func (c *RateLimitController) TryPass(resource string) (Pass, BlockError) {
 	if c.limiterFor(resource).Allow() {
 		return &rateLimitPass{}, nil
 	}

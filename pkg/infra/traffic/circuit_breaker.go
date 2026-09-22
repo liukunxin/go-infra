@@ -265,6 +265,7 @@ type CircuitBreakerController struct {
 	cfg      CircuitBreakerConfig
 
 	stopEvict chan struct{}
+	closeOnce sync.Once
 }
 
 // NewCircuitBreakerController creates a controller. Zero-value config fields use defaults.
@@ -281,13 +282,11 @@ func NewCircuitBreakerController(cfg CircuitBreakerConfig) *CircuitBreakerContro
 	return c
 }
 
-// Close stops the background eviction goroutine.
+// Close stops the background eviction goroutine. Safe to call multiple times.
 func (c *CircuitBreakerController) Close() {
-	select {
-	case <-c.stopEvict:
-	default:
+	c.closeOnce.Do(func() {
 		close(c.stopEvict)
-	}
+	})
 }
 
 func (c *CircuitBreakerController) evictLoop() {
@@ -333,7 +332,7 @@ func (c *CircuitBreakerController) breakerFor(resource string) *resourceBreaker 
 }
 
 // TryPass implements Controller.
-func (c *CircuitBreakerController) TryPass(resource string, opts ...TryPassOption) (Pass, BlockError) {
+func (c *CircuitBreakerController) TryPass(resource string) (Pass, BlockError) {
 	allowed, recordFn := c.breakerFor(resource).tryAcquire()
 	if !allowed {
 		return nil, &cbBlockError{resource: resource}

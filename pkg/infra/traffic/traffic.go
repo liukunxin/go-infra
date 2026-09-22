@@ -1,10 +1,8 @@
 package traffic
 
-import "sync/atomic"
-
-const (
-	TrafficTypeInbound TrafficType = iota + 1
-	TrafficTypeOutbound
+import (
+	"net/http"
+	"sync/atomic"
 )
 
 const (
@@ -13,19 +11,6 @@ const (
 	BlockTypeCircuitBreaking
 	BlockTypeInternal
 )
-
-type TrafficType int32
-
-func (t TrafficType) String() string {
-	switch t {
-	case TrafficTypeInbound:
-		return "inbound"
-	case TrafficTypeOutbound:
-		return "outbound"
-	default:
-		return "unknown"
-	}
-}
 
 type BlockType int32
 
@@ -40,6 +25,23 @@ func (t BlockType) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+// HTTPStatus maps a BlockType to the recommended HTTP status code.
+// Limit → 429, CircuitBreaking → 503, Internal/unknown → 500.
+func HTTPStatus(t BlockType) int {
+	switch t {
+	case BlockTypeLimit:
+		return http.StatusTooManyRequests
+	case BlockTypeCircuitBreaking:
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+type closer interface {
+	Close()
 }
 
 var globalController atomic.Pointer[Controller]
@@ -65,12 +67,39 @@ func Init(opts ...Option) error {
 	return nil
 }
 
+// SetController replaces the global controller. If the previous instance
+// implements Close(), it is closed. Installing the same instance is a no-op.
 func SetController(controller Controller) {
 	if controller == nil {
 		controller = &DummyController{}
 	}
 
+	old := globalController.Load()
+	if old != nil && *old == controller {
+		return
+	}
+
 	globalController.Store(&controller)
+
+	if old != nil {
+		closeIfNeeded(*old)
+	}
+}
+
+// Close shuts down the current global controller (if it implements Close)
+// and restores DummyController. Safe to call multiple times.
+func Close() {
+	var dummy Controller = &DummyController{}
+	old := globalController.Swap(&dummy)
+	if old != nil {
+		closeIfNeeded(*old)
+	}
+}
+
+func closeIfNeeded(c Controller) {
+	if cl, ok := c.(closer); ok {
+		cl.Close()
+	}
 }
 
 func GetController() Controller {
@@ -79,7 +108,7 @@ func GetController() Controller {
 
 // Controller 流量控制器
 type Controller interface {
-	TryPass(resource string, opts ...TryPassOption) (Pass, BlockError)
+	TryPass(resource string) (Pass, BlockError)
 }
 
 // Pass 允许通过
@@ -118,7 +147,7 @@ func (e *InternalError) BlockMsg() string {
 type DummyController struct {
 }
 
-func (c *DummyController) TryPass(resource string, opts ...TryPassOption) (Pass, BlockError) {
+func (c *DummyController) TryPass(resource string) (Pass, BlockError) {
 	return &dummyPass{}, nil
 }
 

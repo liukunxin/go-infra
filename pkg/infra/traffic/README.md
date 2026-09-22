@@ -18,16 +18,34 @@
 - **Pass.Error(err)** — 告知流控"本次请求失败"（熔断器会计入失败率）
 - 两者**只有第一次调用生效**，可以安全地 `defer pass.Done()` 再按需调 `pass.Error(err)`
 
+### 生命周期
+
+装进全局后，生命周期由 `SetController` / `traffic.Close()` 管理：
+
+- 再次 `Init` / `SetController` 时，若旧实例实现了 `Close()`，会自动关掉
+- 进程退出前调用 `traffic.Close()` 即可停掉限流 / 熔断后台协程
+- 业务不必自己保住具体类型再手动 `Close`
+
+### HTTP / gRPC 状态约定
+
+| BlockType | HTTP | gRPC（经本库映射） |
+|-----------|------|-------------------|
+| `BlockTypeLimit` | 429 | `ResourceExhausted` |
+| `BlockTypeCircuitBreaking` | 503 | `Unavailable` |
+| `BlockTypeInternal` / 其它 | 500 | `Internal` |
+
+调用 `traffic.HTTPStatus(blockErr.BlockType())` 即可，无需各业务自行猜测。
+
 ---
 
 ## 限流（RateLimitController）
 
-使用令牌桶算法，限制每秒最多允许多少请求通过。
+使用令牌桶算法，限制每秒最多允许多少请求通过。空闲 resource 按 TTL 淘汰；活跃 key 的突发窗口不会被整表清空。
 
 ### 初始化
 
 ```go
-import "github.com/yourorg/go-infra/pkg/infra/traffic"
+import "github.com/liukunxin/go-infra/pkg/infra/traffic"
 
 // 每秒最多 500 个请求，允许瞬间突发 50 个
 ctrl := traffic.NewRateLimitController(500, 50)
@@ -136,7 +154,7 @@ traffic.Init(traffic.WithController(ctrl))
 pass, blockErr := traffic.GetController().TryPass("order_create")
 if blockErr != nil {
     switch blockErr.BlockType() {
-    case traffic.BlockTypeRateLimit:
+    case traffic.BlockTypeLimit:
         return errors.New("请求频率过高，请稍后重试")
     case traffic.BlockTypeCircuitBreaking:
         return errors.New("服务暂时不可用，请稍后重试")
@@ -150,8 +168,8 @@ defer pass.Done()
 ## 不做任何限制（测试 / 默认）
 
 ```go
-// Init 不传参数，或使用 DummyController
-traffic.Init()  // 等价于 traffic.Init(traffic.WithController(traffic.NewDummyController()))
+// Init 不传参数，默认 DummyController（全部放行）
+traffic.Init()
 ```
 
 ---
@@ -171,7 +189,7 @@ traffic.Init()  // 等价于 traffic.Init(traffic.WithController(traffic.NewDumm
 ```go
 // Controller — 流量控制器
 type Controller interface {
-    TryPass(resource string, opts ...TryPassOption) (Pass, BlockError)
+    TryPass(resource string) (Pass, BlockError)
 }
 
 // Pass — 通过令牌，用于回报结果
@@ -183,7 +201,7 @@ type Pass interface {
 // BlockError — 被拒绝时返回的错误
 type BlockError interface {
     error
-    BlockType() BlockType  // RateLimit | CircuitBreaking
+    BlockType() BlockType  // Limit | CircuitBreaking | Internal
     BlockMsg()  string
 }
 ```
