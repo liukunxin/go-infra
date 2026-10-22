@@ -14,18 +14,18 @@
 //
 //     objstore.Init(&objstore.Config{...})
 //     svc, err := image.NewService(image.Config{
-//         Bucket:          "my-bucket",
-//         SignSecret:      "random-32-byte-secret",
-//         DefaultTokenTTL: 30 * time.Minute,
+//     Bucket:          "my-bucket",
+//     SignSecret:      "random-32-byte-secret",
+//     DefaultTokenTTL: 30 * time.Minute,
 //     }, myMetaStore)
 //
 //  2. Upload an image (in your upload HTTP handler):
 //
 //     img, err := svc.Upload(ctx, &image.UploadRequest{
-//         Body:     file,
-//         MimeType: "image/jpeg",
-//         OwnerID:  userID,
-//         MaxBytes: 5 << 20, // 5 MiB
+//     Body:     file,
+//     MimeType: "image/jpeg",
+//     OwnerID:  userID,
+//     MaxBytes: 5 << 20, // 5 MiB
 //     })
 //     // persist img.ID in your database
 //
