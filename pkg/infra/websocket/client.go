@@ -2,7 +2,6 @@ package websocket
 
 import (
 	"context"
-	"errors"
 	"math/rand"
 	"sync"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/liukunxin/go-infra/pkg/base/log"
 )
 
+// Client dials a WebSocket endpoint and optionally reconnects with backoff.
 type Client struct {
 	cfg      ClientConfig
 	handlers ClientHandlers
@@ -21,6 +21,7 @@ type Client struct {
 	closed    chan struct{}
 }
 
+// NewClient constructs a Client. Call Run to connect.
 func NewClient(cfg ClientConfig, handlers ClientHandlers) *Client {
 	cfg = cfg.normalized()
 	return &Client{
@@ -31,7 +32,7 @@ func NewClient(cfg ClientConfig, handlers ClientHandlers) *Client {
 }
 
 // Run blocks and keeps the websocket connection alive. When Reconnect=true, it
-// reconnects automatically until ctx is canceled.
+// reconnects automatically until ctx is canceled or Close is called.
 func (c *Client) Run(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -67,20 +68,30 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 }
 
+// Send enqueues a frame on the active connection.
 func (c *Client) Send(msgType cws.MessageType, data []byte) error {
 	c.mu.RLock()
 	conn := c.conn
 	c.mu.RUnlock()
 	if conn == nil {
-		return errors.New("websocket: client is not connected")
+		return ErrClientNotConnected
 	}
 	return conn.Send(msgType, data)
 }
 
+// SendText enqueues a text frame.
 func (c *Client) SendText(text string) error {
 	return c.Send(MessageText, []byte(text))
 }
 
+// Conn returns the active connection, or nil when disconnected.
+func (c *Client) Conn() *Conn {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.conn
+}
+
+// Close stops reconnecting and closes the active connection.
 func (c *Client) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
@@ -166,6 +177,13 @@ func (c *Client) clientWriteLoop(conn *Conn, errCh chan<- error) {
 			errCh <- conn.Context().Err()
 			return
 		case <-ticker.C:
+			if c.handlers.OnTick != nil {
+				c.handlers.OnTick()
+			}
+			if conn.Context().Err() != nil {
+				errCh <- conn.Context().Err()
+				return
+			}
 			pingCtx, cancel := context.WithTimeout(conn.Context(), c.cfg.WriteTimeout)
 			err := conn.Raw().Ping(pingCtx)
 			cancel()

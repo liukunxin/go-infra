@@ -6,13 +6,15 @@ import (
 	cws "github.com/coder/websocket"
 )
 
-// Hub manages websocket connections and group broadcasts.
+// Hub manages websocket connections and group broadcasts within one process.
+// It is not a cross-instance session store.
 type Hub struct {
 	mu     sync.RWMutex
 	conns  map[string]*Conn
 	groups map[string]map[string]*Conn
 }
 
+// NewHub creates an empty Hub.
 func NewHub() *Hub {
 	return &Hub{
 		conns:  make(map[string]*Conn),
@@ -20,6 +22,7 @@ func NewHub() *Hub {
 	}
 }
 
+// Register adds conn to the hub.
 func (h *Hub) Register(conn *Conn) {
 	if h == nil || conn == nil {
 		return
@@ -29,6 +32,7 @@ func (h *Hub) Register(conn *Conn) {
 	h.conns[conn.ID()] = conn
 }
 
+// Unregister removes conn from the hub and all groups.
 func (h *Hub) Unregister(conn *Conn) {
 	if h == nil || conn == nil {
 		return
@@ -41,6 +45,7 @@ func (h *Hub) Unregister(conn *Conn) {
 	}
 }
 
+// Join adds conn to a named group.
 func (h *Hub) Join(group string, conn *Conn) {
 	if h == nil || conn == nil || group == "" {
 		return
@@ -55,6 +60,7 @@ func (h *Hub) Join(group string, conn *Conn) {
 	members[conn.ID()] = conn
 }
 
+// Leave removes conn from a named group.
 func (h *Hub) Leave(group string, conn *Conn) {
 	if h == nil || conn == nil || group == "" {
 		return
@@ -69,27 +75,44 @@ func (h *Hub) Leave(group string, conn *Conn) {
 	}
 }
 
-func (h *Hub) Broadcast(msgType cws.MessageType, data []byte) {
+// Broadcast non-blocking-enqueues to every registered connection.
+// Returns how many targets failed (full queue, closed, etc.). A slow peer
+// never blocks delivery to others.
+func (h *Hub) Broadcast(msgType cws.MessageType, data []byte) (failed int) {
 	if h == nil {
-		return
+		return 0
 	}
-	targets := h.snapshotConns()
-	for _, conn := range targets {
-		_ = conn.Send(msgType, data)
-	}
+	return h.fanout(h.snapshotConns(), msgType, data)
 }
 
-func (h *Hub) BroadcastGroup(group string, msgType cws.MessageType, data []byte) {
+// BroadcastGroup is Broadcast restricted to one group.
+func (h *Hub) BroadcastGroup(group string, msgType cws.MessageType, data []byte) (failed int) {
 	if h == nil || group == "" {
-		return
+		return 0
 	}
-	targets := h.snapshotGroup(group)
-	for _, conn := range targets {
-		_ = conn.Send(msgType, data)
-	}
+	return h.fanout(h.snapshotGroup(group), msgType, data)
 }
 
-// snapshotConns returns a copy of all registered connections under a short lock hold.
+func (h *Hub) fanout(targets []*Conn, msgType cws.MessageType, data []byte) int {
+	failed := 0
+	for _, conn := range targets {
+		if err := conn.TrySend(msgType, data); err != nil {
+			failed++
+		}
+	}
+	return failed
+}
+
+// Len returns the number of registered connections.
+func (h *Hub) Len() int {
+	if h == nil {
+		return 0
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.conns)
+}
+
 func (h *Hub) snapshotConns() []*Conn {
 	h.mu.RLock()
 	conns := make([]*Conn, 0, len(h.conns))
@@ -100,7 +123,6 @@ func (h *Hub) snapshotConns() []*Conn {
 	return conns
 }
 
-// snapshotGroup returns a copy of connections in a group under a short lock hold.
 func (h *Hub) snapshotGroup(group string) []*Conn {
 	h.mu.RLock()
 	members := h.groups[group]
