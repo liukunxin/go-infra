@@ -165,8 +165,8 @@ type resourceBreaker struct {
 	cfg    CircuitBreakerConfig
 
 	openedAt              time.Time
-	halfOpenInFlight      int // probes currently executing
-	halfOpenSuccessStreak int // consecutive successes in Half-Open
+	halfOpenInFlight      int       // probes currently executing
+	halfOpenSuccessStreak int       // consecutive successes in Half-Open
 	lastAccess            time.Time // updated on every tryAcquire; used for eviction
 }
 

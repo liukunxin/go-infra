@@ -23,12 +23,12 @@ const defaultMaxResponseBodyBytes = 32 << 20 // 32 MB
 // Config defines connection-pool and timeout parameters for the HTTP client.
 // All fields have sensible defaults; zero values are filled in by normalized().
 type Config struct {
-	Timeout              time.Duration    `yaml:"timeout"                 json:"timeout"`                   // request timeout, default 30s
-	MaxIdleConns         int              `yaml:"max_idle_conns"          json:"max_idle_conns"`            // total max idle connections, default 100
-	MaxIdleConnsPerHost  int              `yaml:"max_idle_conns_per_host" json:"max_idle_conns_per_host"`  // per-host max idle connections, default 10
-	MaxConnsPerHost      int              `yaml:"max_conns_per_host"      json:"max_conns_per_host"`       // per-host max connections, 0 = unlimited
-	IdleConnTimeout      time.Duration    `yaml:"idle_conn_timeout"       json:"idle_conn_timeout"`        // idle connection reclaim timeout, default 90s
-	TLSHandshakeTimeout  time.Duration    `yaml:"tls_handshake_timeout"   json:"tls_handshake_timeout"`    // TLS handshake timeout, default 10s
+	Timeout              time.Duration     `yaml:"timeout"                 json:"timeout"`                 // request timeout, default 30s
+	MaxIdleConns         int               `yaml:"max_idle_conns"          json:"max_idle_conns"`          // total max idle connections, default 100
+	MaxIdleConnsPerHost  int               `yaml:"max_idle_conns_per_host" json:"max_idle_conns_per_host"` // per-host max idle connections, default 10
+	MaxConnsPerHost      int               `yaml:"max_conns_per_host"      json:"max_conns_per_host"`      // per-host max connections, 0 = unlimited
+	IdleConnTimeout      time.Duration     `yaml:"idle_conn_timeout"       json:"idle_conn_timeout"`       // idle connection reclaim timeout, default 90s
+	TLSHandshakeTimeout  time.Duration     `yaml:"tls_handshake_timeout"   json:"tls_handshake_timeout"`   // TLS handshake timeout, default 10s
 	MaxResponseBodyBytes int64             `yaml:"max_response_body_bytes" json:"max_response_body_bytes"` // response body read limit, default 32 MB; 0 = use default
 	DefaultHeaders       map[string]string `yaml:"default_headers"         json:"default_headers"`         // headers applied to every request; per-request options override
 	MetricsEnabled       bool              `yaml:"metrics_enabled"         json:"metrics_enabled"`         // record outbound request metrics when true
@@ -70,12 +70,12 @@ func NewClient(cfg Config) *Client {
 	cfg = cfg.normalized()
 
 	transport := &http.Transport{
-		Proxy:               http.ProxyFromEnvironment,
-		MaxIdleConns:        cfg.MaxIdleConns,
-		MaxIdleConnsPerHost: cfg.MaxIdleConnsPerHost,
-		MaxConnsPerHost:     cfg.MaxConnsPerHost,
-		IdleConnTimeout:     cfg.IdleConnTimeout,
-		TLSHandshakeTimeout: cfg.TLSHandshakeTimeout,
+		Proxy:                 http.ProxyFromEnvironment,
+		MaxIdleConns:          cfg.MaxIdleConns,
+		MaxIdleConnsPerHost:   cfg.MaxIdleConnsPerHost,
+		MaxConnsPerHost:       cfg.MaxConnsPerHost,
+		IdleConnTimeout:       cfg.IdleConnTimeout,
+		TLSHandshakeTimeout:   cfg.TLSHandshakeTimeout,
 		ExpectContinueTimeout: 1 * time.Second,
 		DialContext: (&net.Dialer{
 			Timeout:   5 * time.Second,

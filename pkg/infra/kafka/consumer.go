@@ -26,7 +26,7 @@ type ConsumerGroup struct {
 	subsMu sync.Mutex
 	subs   map[string]Handler // topic → handler, registered before Start
 
-	startMu sync.Mutex        // protects cancel to avoid Start/Close data race
+	startMu sync.Mutex // protects cancel to avoid Start/Close data race
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 

@@ -38,13 +38,13 @@ type NotificationData struct {
 
 // NotificationSummary 批量延长续订日期操作的摘要。
 type NotificationSummary struct {
-	RequestIdentifier            string   `json:"requestIdentifier"`
-	Environment                  string   `json:"environment"`
-	AppAppleID                   int64    `json:"appAppleId"`
-	ProductID                    string   `json:"productId"`
-	StorefrontCountryCodes       []string `json:"storefrontCountryCodes"`
-	FailedCount                  int64    `json:"failedCount"`
-	SucceededCount               int64    `json:"succeededCount"`
+	RequestIdentifier      string   `json:"requestIdentifier"`
+	Environment            string   `json:"environment"`
+	AppAppleID             int64    `json:"appAppleId"`
+	ProductID              string   `json:"productId"`
+	StorefrontCountryCodes []string `json:"storefrontCountryCodes"`
+	FailedCount            int64    `json:"failedCount"`
+	SucceededCount         int64    `json:"succeededCount"`
 }
 
 // SendTestNotificationResponse POST /inApps/v1/notifications/test 响应。
@@ -63,7 +63,7 @@ type CheckTestNotificationResponse struct {
 
 // NotificationSendAttempt 单次通知发送尝试的结果。
 type NotificationSendAttempt struct {
-	AttemptDate  int64  `json:"attemptDate"`
+	AttemptDate       int64  `json:"attemptDate"`
 	SendAttemptResult string `json:"sendAttemptResult"`
 }
 

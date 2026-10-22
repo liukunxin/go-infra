@@ -14,11 +14,11 @@ const ObjectACLHeader = "x-amz-acl"
 type ObjectCannedACL = types.ObjectCannedACL
 
 const (
-	ObjectACLPrivate               = types.ObjectCannedACLPrivate
-	ObjectACLPublicRead            = types.ObjectCannedACLPublicRead
-	ObjectACLPublicReadWrite       = types.ObjectCannedACLPublicReadWrite
-	ObjectACLAuthenticatedRead     = types.ObjectCannedACLAuthenticatedRead
-	ObjectACLBucketOwnerRead       = types.ObjectCannedACLBucketOwnerRead
+	ObjectACLPrivate                = types.ObjectCannedACLPrivate
+	ObjectACLPublicRead             = types.ObjectCannedACLPublicRead
+	ObjectACLPublicReadWrite        = types.ObjectCannedACLPublicReadWrite
+	ObjectACLAuthenticatedRead      = types.ObjectCannedACLAuthenticatedRead
+	ObjectACLBucketOwnerRead        = types.ObjectCannedACLBucketOwnerRead
 	ObjectACLBucketOwnerFullControl = types.ObjectCannedACLBucketOwnerFullControl
 )
 

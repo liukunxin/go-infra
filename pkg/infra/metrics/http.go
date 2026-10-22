@@ -14,8 +14,8 @@ import (
 var defaultHTTPSkipPaths = []string{"/health", "/metrics"}
 
 var (
-	meter              metric.Meter
-	HttpRequests       metric.Int64Counter
+	meter               metric.Meter
+	HttpRequests        metric.Int64Counter
 	HttpDurationSeconds metric.Float64Histogram
 )
 

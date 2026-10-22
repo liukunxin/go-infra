@@ -143,14 +143,14 @@ func TestPublicURLFallbackMatchesObjectURL(t *testing.T) {
 		bucket   = "my-bucket"
 	)
 	fileNames := []string{
-		"lecture.pdf",                              // 常见成功 case：无需编码
-		"simple-file_v1.0.pdf",                     // 字母数字 + .-_ 
-		"a b.pdf",                                  // 空格
-		"WPS Slides Quick Start Guide(1).pdf",      // 空格 + 括号（线上失败 case）
-		"100%complete.pdf",                         // 文件名含 %
-		"notes#draft.pdf",                          // #
-		"中文 课件.pdf",                                // 中文 + 空格
-		"file+plus.pdf",                            // +
+		"lecture.pdf",                         // 常见成功 case：无需编码
+		"simple-file_v1.0.pdf",                // 字母数字 + .-_
+		"a b.pdf",                             // 空格
+		"WPS Slides Quick Start Guide(1).pdf", // 空格 + 括号（线上失败 case）
+		"100%complete.pdf",                    // 文件名含 %
+		"notes#draft.pdf",                     // #
+		"中文 课件.pdf",                           // 中文 + 空格
+		"file+plus.pdf",                       // +
 	}
 	for _, name := range fileNames {
 		t.Run(name, func(t *testing.T) {

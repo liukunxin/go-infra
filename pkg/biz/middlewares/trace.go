@@ -12,7 +12,7 @@ import (
 
 func GinTraceMiddleware() gin.HandlerFunc {
 	tracer := otel.Tracer("gin-server")
-	
+
 	return func(c *gin.Context) {
 		// 提取上游 trace 信息（如果有）
 		ctx := otel.GetTextMapPropagator().Extract(c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))

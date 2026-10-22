@@ -17,13 +17,13 @@ import (
 // HTTPClient: 可选。非 nil 时使用该客户端发请求（HTTPTimeout 被忽略）；
 // nil 时内部创建独立 *http.Client 并使用 HTTPTimeout（默认 15s）。
 type Config struct {
-	MerchantNo    string
-	AppKey        string
-	PrivateKeyPEM string
+	MerchantNo     string
+	AppKey         string
+	PrivateKeyPEM  string
 	JDPublicKeyPEM string
-	IsSandbox     bool
-	HTTPTimeout   time.Duration
-	HTTPClient    *http.Client
+	IsSandbox      bool
+	HTTPTimeout    time.Duration
+	HTTPClient     *http.Client
 }
 
 func (c Config) normalized() Config {

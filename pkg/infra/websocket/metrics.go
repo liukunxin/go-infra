@@ -13,11 +13,11 @@ import (
 var (
 	wsMetricsOnce sync.Once
 
-	wsConnections      metric.Int64UpDownCounter
-	wsMessagesTotal    metric.Int64Counter
-	wsMessageBytes     metric.Int64Counter
-	wsErrorsTotal      metric.Int64Counter
-	wsReconnectsTotal  metric.Int64Counter
+	wsConnections     metric.Int64UpDownCounter
+	wsMessagesTotal   metric.Int64Counter
+	wsMessageBytes    metric.Int64Counter
+	wsErrorsTotal     metric.Int64Counter
+	wsReconnectsTotal metric.Int64Counter
 )
 
 func ensureMetrics() {

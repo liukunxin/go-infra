@@ -10,8 +10,8 @@ import (
 // ── Global producer ───────────────────────────────────────────────────────────
 
 var (
-	globalProducer     atomic.Pointer[Producer]
-	producerInitOnce   sync.Once
+	globalProducer   atomic.Pointer[Producer]
+	producerInitOnce sync.Once
 )
 
 // InitProducer initializes the global Kafka producer. Only the first call takes effect.
@@ -42,9 +42,9 @@ func GetProducer() *Producer {
 // ── Global consumer group ─────────────────────────────────────────────────────
 
 var (
-	globalConsumer    atomic.Pointer[ConsumerGroup]
-	consumerInitOnce  sync.Once
-	consumerInitErrP  atomic.Pointer[error] // persists the first-call error for subsequent callers
+	globalConsumer   atomic.Pointer[ConsumerGroup]
+	consumerInitOnce sync.Once
+	consumerInitErrP atomic.Pointer[error] // persists the first-call error for subsequent callers
 )
 
 // InitConsumer initializes the global Kafka consumer group. Only the first call takes effect.

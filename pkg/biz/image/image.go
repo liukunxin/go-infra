@@ -52,8 +52,8 @@ import (
 type Image struct {
 	ID        string
 	MimeType  string
-	Size      int64     // bytes; 0 if unknown at upload time
-	OwnerID   string    // uploader's user ID; empty for system uploads
+	Size      int64  // bytes; 0 if unknown at upload time
+	OwnerID   string // uploader's user ID; empty for system uploads
 	CreatedAt time.Time
 }
 

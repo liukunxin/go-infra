@@ -9,12 +9,12 @@ import (
 
 // 常用登录类型常量，可直接传入 GenerateToken 的 subject 参数。
 const (
-	SubjectPassword        = "password"
-	SubjectPhone           = "phone"
-	SubjectEmail           = "email"
-	SubjectWechatMiniApp   = "wechat_miniprogram"
-	SubjectWechatWeb       = "wechat_web"
-	SubjectWechatApp       = "wechat_app"
+	SubjectPassword      = "password"
+	SubjectPhone         = "phone"
+	SubjectEmail         = "email"
+	SubjectWechatMiniApp = "wechat_miniprogram"
+	SubjectWechatWeb     = "wechat_web"
+	SubjectWechatApp     = "wechat_app"
 )
 
 type Claims struct {

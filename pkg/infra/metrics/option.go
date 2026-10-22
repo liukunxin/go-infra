@@ -7,9 +7,9 @@ import (
 )
 
 type optionConfig struct {
-	reader         sdkmetric.Reader
-	attributes     []attribute.KeyValue
-	httpSkipPaths  []string
+	reader        sdkmetric.Reader
+	attributes    []attribute.KeyValue
+	httpSkipPaths []string
 }
 
 // Option 是 metrics 模块的函数式选项类型。

@@ -26,18 +26,18 @@ type ClientConfig struct {
 	RetryableStatusCode []codes.Code  `yaml:"-" json:"-"`
 
 	// Keepalive
-	KeepaliveTime             time.Duration `yaml:"keepalive_time" json:"keepalive_time"`
-	KeepaliveTimeout          time.Duration `yaml:"keepalive_timeout" json:"keepalive_timeout"`
-	PermitWithoutStream       bool          `yaml:"permit_without_stream" json:"permit_without_stream"`
-	InitialWindowSize         int32         `yaml:"initial_window_size" json:"initial_window_size"`
-	InitialConnWindowSize     int32         `yaml:"initial_conn_window_size" json:"initial_conn_window_size"`
-	MaxCallRecvMessageSize    int           `yaml:"max_call_recv_message_size" json:"max_call_recv_message_size"`
-	MaxCallSendMessageSize    int           `yaml:"max_call_send_message_size" json:"max_call_send_message_size"`
-	EnableTrafficInterceptor  bool          `yaml:"enable_traffic_interceptor" json:"enable_traffic_interceptor"`
-	TrafficResource           string        `yaml:"traffic_resource" json:"traffic_resource"`
-	UnaryInterceptors         []ggrpc.UnaryClientInterceptor
-	StreamInterceptors        []ggrpc.StreamClientInterceptor
-	ExtraDialOptions          []ggrpc.DialOption
+	KeepaliveTime            time.Duration `yaml:"keepalive_time" json:"keepalive_time"`
+	KeepaliveTimeout         time.Duration `yaml:"keepalive_timeout" json:"keepalive_timeout"`
+	PermitWithoutStream      bool          `yaml:"permit_without_stream" json:"permit_without_stream"`
+	InitialWindowSize        int32         `yaml:"initial_window_size" json:"initial_window_size"`
+	InitialConnWindowSize    int32         `yaml:"initial_conn_window_size" json:"initial_conn_window_size"`
+	MaxCallRecvMessageSize   int           `yaml:"max_call_recv_message_size" json:"max_call_recv_message_size"`
+	MaxCallSendMessageSize   int           `yaml:"max_call_send_message_size" json:"max_call_send_message_size"`
+	EnableTrafficInterceptor bool          `yaml:"enable_traffic_interceptor" json:"enable_traffic_interceptor"`
+	TrafficResource          string        `yaml:"traffic_resource" json:"traffic_resource"`
+	UnaryInterceptors        []ggrpc.UnaryClientInterceptor
+	StreamInterceptors       []ggrpc.StreamClientInterceptor
+	ExtraDialOptions         []ggrpc.DialOption
 }
 
 func (c ClientConfig) normalized() ClientConfig {
@@ -96,7 +96,7 @@ type ServerConfig struct {
 	Time                  time.Duration `yaml:"keepalive_time" json:"keepalive_time"`
 	Timeout               time.Duration `yaml:"keepalive_timeout" json:"keepalive_timeout"`
 
-	EnableTrafficInterceptor bool `yaml:"enable_traffic_interceptor" json:"enable_traffic_interceptor"`
+	EnableTrafficInterceptor bool   `yaml:"enable_traffic_interceptor" json:"enable_traffic_interceptor"`
 	TrafficResourcePrefix    string `yaml:"traffic_resource_prefix" json:"traffic_resource_prefix"`
 	EnableReflection         bool   `yaml:"enable_reflection" json:"enable_reflection"`
 	RegisterHealthService    bool   `yaml:"register_health_service" json:"register_health_service"`
